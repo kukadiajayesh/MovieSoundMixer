@@ -2,6 +2,11 @@
 
 A Python/Tkinter GUI application for managing audio tracks in video files. Extract audio from videos or merge external audio tracks into video files with intelligent codec handling and automatic synchronization.
 
+<img width="1115" height="733" alt="Screenshot 2026-04-21 at 12 05 32" src="https://github.com/user-attachments/assets/f631b029-b3d7-4b6f-a35f-ce2154b9b84b" />
+<img width="1103" height="721" alt="Screenshot 2026-04-21 at 12 05 44" src="https://github.com/user-attachments/assets/2f443fd5-1d0c-4a5b-afd4-187524ab872f" />
+<img width="1587" height="724" alt="Screenshot 2026-04-21 at 12 05 03" src="https://github.com/user-attachments/assets/9799b60e-4cfb-4aa1-8d30-29ee3d25942b" />
+
+
 ## What This Script Does
 
 **FFmpeg Audio Manager** provides a user-friendly interface for two main audio operations:
