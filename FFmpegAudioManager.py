@@ -1225,8 +1225,8 @@ class FFmpegAudioManager:
                     audio_src = tmp_file
 
         cmd = [mkvmerge, '-o', out,
-               '--language', '0:hin', audio_src,
-               vfile]
+               vfile,
+               '--language', '0:hin', audio_src]
         ok = self._run_mkvmerge(cmd, label, out, item_idx, total)
 
         if tmp_file:
