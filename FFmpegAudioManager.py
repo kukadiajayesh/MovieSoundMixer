@@ -510,11 +510,14 @@ class FFmpegAudioManager:
             self.batch_active = False
             self.batch_thread: Optional[threading.Thread] = None
             self.batch_max_parallel_var = tk.StringVar(value=str(self.batch_processor.max_parallel))
+            # Progress tracking
+            self.batch_stats = {"queued": 0, "active": 0, "completed": 0, "failed": 0}
         else:
             self.batch_processor = None
             self.batch_active = False
             self.batch_thread = None
             self.batch_max_parallel_var = tk.StringVar(value="4")
+            self.batch_stats = {"queued": 0, "active": 0, "completed": 0, "failed": 0}
 
         # Theme system
         self.theme_manager = UIThemeManager() if UIThemeManager else None
@@ -540,9 +543,13 @@ class FFmpegAudioManager:
         if self.theme_manager:
             self.theme_manager.configure_ttk_style(style)
 
-        style.configure('Treeview', rowheight=28)
-        style.configure('Accent.TButton', font=('', 10, 'bold'))
-        style.configure('Home.TButton', font=('', 11))
+        # Enhanced styling for better visual appearance
+        style.configure('Treeview', rowheight=28, padding=4)
+        style.configure('TButton', padding=6)
+        style.configure('TLabel', padding=2)
+        style.configure('TLabelframe', padding=6)
+        style.configure('Accent.TButton', font=('', 10, 'bold'), padding=8)
+        style.configure('Home.TButton', font=('', 11), padding=10)
 
         # Horizontal split: left = content+progress | right = log
         outer = tk.PanedWindow(self.root, orient=tk.HORIZONTAL,
@@ -597,9 +604,9 @@ class FFmpegAudioManager:
         frame = ttk.Frame(self.content_area, padding=24)
 
         ttk.Label(frame, text="FFmpeg Audio Manager",
-                  font=('', 20, 'bold')).pack(pady=(0, 4))
+                  font=('', 20, 'bold')).pack(pady=(0, 6))
         ttk.Label(frame, text="Manage audio tracks in your video files",
-                  font=('', 10), foreground='#888').pack(pady=(0, 12))
+                  font=('', 10), foreground='#888').pack(pady=(0, 18))
 
         # Status: Dependencies (single line)
         ffmpeg_path = check_ffmpeg()
@@ -627,12 +634,12 @@ class FFmpegAudioManager:
                       command=self._on_theme_toggle).pack(side=tk.LEFT)
 
         # Card: Extract
-        card1 = ttk.LabelFrame(frame, text="", padding=12)
-        card1.pack(fill=tk.X, pady=6, ipadx=4)
+        card1 = ttk.LabelFrame(frame, text="", padding=14)
+        card1.pack(fill=tk.X, pady=10, ipadx=4, ipady=4)
 
         # Content row: icon + text
         content1 = tk.Frame(card1, bg='white')
-        content1.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 8))
+        content1.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 10))
         extract_canvas = create_extract_icon(content1, 96)
         extract_canvas.pack(side=tk.LEFT, padx=(0, 16))
         text_frame1 = ttk.Frame(content1)
@@ -640,19 +647,19 @@ class FFmpegAudioManager:
         ttk.Label(text_frame1, text="Extract Audio from Videos",
                   font=('', 12, 'bold')).pack(anchor='w')
         ttk.Label(text_frame1, text="Probe video files, pick an audio stream, and save it as a standalone audio file.",
-                  foreground='#666', wraplength=480).pack(anchor='w', pady=(4, 0))
+                  foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
 
         ttk.Button(card1, text="Open Extract Panel →",
                    style='Accent.TButton',
-                   command=self._show_extract).pack(anchor='e', ipady=6, ipadx=10)
+                   command=self._show_extract).pack(anchor='e', ipady=8, ipadx=14, pady=(4, 0))
 
         # Card: Add
-        card2 = ttk.LabelFrame(frame, text="", padding=12)
-        card2.pack(fill=tk.X, pady=6, ipadx=4)
+        card2 = ttk.LabelFrame(frame, text="", padding=14)
+        card2.pack(fill=tk.X, pady=10, ipadx=4, ipady=4)
 
         # Content row: icon + text
         content2 = tk.Frame(card2, bg='white')
-        content2.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 8))
+        content2.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 10))
         add_canvas = create_add_icon(content2, 96)
         add_canvas.pack(side=tk.LEFT, padx=(0, 16))
         text_frame2 = ttk.Frame(content2)
@@ -661,11 +668,11 @@ class FFmpegAudioManager:
                   font=('', 12, 'bold')).pack(anchor='w')
         ttk.Label(text_frame2, text="Merge an external audio file into a video. Supports auto-matching by episode number, "
                   "duration padding, and both FFmpeg / mkvmerge backends.",
-                  foreground='#666', wraplength=480).pack(anchor='w', pady=(4, 0))
+                  foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
 
         ttk.Button(card2, text="Open Add Audio Panel →",
                    style='Accent.TButton',
-                   command=self._show_add).pack(anchor='e', ipady=6, ipadx=10)
+                   command=self._show_add).pack(anchor='e', ipady=8, ipadx=14, pady=(4, 0))
 
         return frame
 
@@ -718,24 +725,24 @@ class FFmpegAudioManager:
         ttk.Label(header, text="Step 1: Extract Audio from Video Files",
                   font=('', 11, 'bold')).pack(side=tk.LEFT, padx=10)
 
-        content = ttk.LabelFrame(frame, text="", padding=4)
+        content = ttk.LabelFrame(frame, text="", padding=8)
         content.pack(fill=tk.BOTH, expand=True)
 
         tb = ttk.Frame(content)
-        tb.pack(fill=tk.X, pady=(0, 4))
+        tb.pack(fill=tk.X, pady=(0, 8))
         self.extract_add_files_btn = ttk.Button(tb, text="+ Add Files",
                    command=self._add_files_step1)
-        self.extract_add_files_btn.pack(side=tk.LEFT, padx=2)
+        self.extract_add_files_btn.pack(side=tk.LEFT, padx=3)
         self.extract_add_folder_btn = ttk.Button(tb, text="+ Add Folder",
                    command=self._add_folder_step1)
-        self.extract_add_folder_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=6, fill=tk.Y, pady=2)
+        self.extract_add_folder_btn.pack(side=tk.LEFT, padx=3)
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
         self.extract_remove_btn = ttk.Button(tb, text="Remove Selected",
                    command=self._remove_selected_step1)
-        self.extract_remove_btn.pack(side=tk.LEFT, padx=2)
+        self.extract_remove_btn.pack(side=tk.LEFT, padx=3)
         self.extract_clear_btn = ttk.Button(tb, text="Clear All",
                    command=self._clear_step1)
-        self.extract_clear_btn.pack(side=tk.LEFT, padx=2)
+        self.extract_clear_btn.pack(side=tk.LEFT, padx=3)
 
         cols = ('#', 'File Name', 'Extract Stream  (click to change)')
         tf = ttk.Frame(content)
@@ -880,12 +887,12 @@ class FFmpegAudioManager:
         ttk.Label(header, text="Step 2: Add Audio to Videos",
                   font=('', 11, 'bold')).pack(side=tk.LEFT, padx=10)
 
-        content = ttk.LabelFrame(frame, text="", padding=4)
+        content = ttk.LabelFrame(frame, text="", padding=8)
         content.pack(fill=tk.BOTH, expand=True)
 
         # Audio folder row — auto-matches by episode whenever changed
         af_row = ttk.Frame(content)
-        af_row.pack(fill=tk.X, pady=(0, 4))
+        af_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(af_row, text="Audio Folder:", width=15, anchor='w').pack(side=tk.LEFT)
         self.audio_folder_var = tk.StringVar()
         self.audio_folder_var.trace_add('write', lambda *_: self._auto_match_all())
@@ -897,20 +904,20 @@ class FFmpegAudioManager:
 
         # Toolbar
         tb = ttk.Frame(content)
-        tb.pack(fill=tk.X, pady=(0, 4))
+        tb.pack(fill=tk.X, pady=(0, 8))
         self.add_videos_btn = ttk.Button(tb, text="+ Add Videos",
                    command=self._add_videos_step2)
-        self.add_videos_btn.pack(side=tk.LEFT, padx=2)
+        self.add_videos_btn.pack(side=tk.LEFT, padx=3)
         self.add_folder_btn = ttk.Button(tb, text="+ Add Video Folder",
                    command=self._add_folder_step2)
-        self.add_folder_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=6, fill=tk.Y, pady=2)
+        self.add_folder_btn.pack(side=tk.LEFT, padx=3)
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
         self.remove_selected_btn = ttk.Button(tb, text="Remove Selected",
                    command=self._remove_selected_step2)
-        self.remove_selected_btn.pack(side=tk.LEFT, padx=2)
+        self.remove_selected_btn.pack(side=tk.LEFT, padx=3)
         self.clear_all_btn = ttk.Button(tb, text="Clear All",
                    command=self._clear_add_videos)
-        self.clear_all_btn.pack(side=tk.LEFT, padx=2)
+        self.clear_all_btn.pack(side=tk.LEFT, padx=3)
 
         # Table
         cols = ('#', 'Video File', 'Audio File  (double-click or click cell to pick)')
@@ -1015,6 +1022,29 @@ class FFmpegAudioManager:
             self.batch_parallel_spin.pack(side=tk.LEFT, padx=4)
             ttk.Label(par_frame, text=f"(system: {self.batch_processor.max_parallel} cores)",
                      foreground='#666').pack(side=tk.LEFT)
+
+            # Batch Progress Display (initially hidden)
+            self.batch_progress_frame = ttk.LabelFrame(batch_frame, text="Progress", padding=4)
+            self.batch_progress_frame.pack(fill=tk.X, pady=(6, 0))
+            self.batch_progress_frame.pack_forget()  # Hide initially
+
+            # Progress bar
+            self.batch_progress_bar = ttk.Progressbar(self.batch_progress_frame,
+                                                       mode='determinate',
+                                                       maximum=100)
+            self.batch_progress_bar.pack(fill=tk.X, pady=2)
+
+            # Statistics row
+            stat_frame = ttk.Frame(self.batch_progress_frame)
+            stat_frame.pack(fill=tk.X, pady=(4, 0))
+            self.batch_queued_label = ttk.Label(stat_frame, text="Queued: 0")
+            self.batch_queued_label.pack(side=tk.LEFT, padx=(0, 12))
+            self.batch_active_label = ttk.Label(stat_frame, text="Active: 0")
+            self.batch_active_label.pack(side=tk.LEFT, padx=(0, 12))
+            self.batch_completed_label = ttk.Label(stat_frame, text="Completed: 0")
+            self.batch_completed_label.pack(side=tk.LEFT, padx=(0, 12))
+            self.batch_failed_label = ttk.Label(stat_frame, text="Failed: 0")
+            self.batch_failed_label.pack(side=tk.LEFT)
 
         # Output folder + action button
         bot = ttk.Frame(content)
@@ -1490,6 +1520,29 @@ class FFmpegAudioManager:
             self.dark_mode_var.set(self.theme_manager.dark_mode)
             self._rebuild_ui_theme()
 
+    def _update_batch_progress(self, completed: int, total: int) -> None:
+        """Update batch progress display."""
+        if not hasattr(self, 'batch_progress_bar') or not self.batch_processor:
+            return
+
+        # Update progress bar
+        if total > 0:
+            progress_pct = int((completed / total) * 100)
+            self.batch_progress_bar['value'] = progress_pct
+
+        # Update statistics from log (simplified)
+        queued = len(self.batch_processor.queue)
+        active = len([t for t in threading.enumerate() if t.daemon and 'Thread' in str(type(t))])
+
+        if hasattr(self, 'batch_queued_label'):
+            self.batch_queued_label.config(text=f"Queued: {queued}")
+        if hasattr(self, 'batch_active_label'):
+            self.batch_active_label.config(text=f"Active: {active}")
+        if hasattr(self, 'batch_completed_label'):
+            self.batch_completed_label.config(text=f"Completed: {completed}")
+        if hasattr(self, 'batch_failed_label'):
+            self.batch_failed_label.config(text=f"Failed: {total - completed - queued - active}")
+
     def _rebuild_ui_theme(self):
         """Rebuild UI with new theme colors."""
         if not self.theme_manager:
@@ -1548,6 +1601,10 @@ class FFmpegAudioManager:
 
             self._log(f"[INFO] Starting batch: {total_jobs} job(s), max {self.batch_processor.max_parallel} parallel")
 
+            # Show batch progress display
+            if hasattr(self, 'batch_progress_frame'):
+                self.batch_progress_frame.pack(fill=tk.X, pady=(6, 0))
+
             completed = 0
             failed = 0
             idx = 0
@@ -1594,15 +1651,25 @@ class FFmpegAudioManager:
                 for job_idx in completed_ids:
                     del active_threads[job_idx]
 
+                # Update progress display
+                self._update_batch_progress(completed, total_jobs)
+
                 # Brief sleep to avoid busy-waiting
                 time.sleep(0.1)
 
             self._log(f"[DONE] Batch complete - Success: {completed}, Failed: {total_jobs - completed}")
+
+            # Hide batch progress display
+            if hasattr(self, 'batch_progress_frame'):
+                self.batch_progress_frame.pack_forget()
+
             messagebox.showinfo("Batch Complete",
                 f"Batch processing finished!\n\nSuccess: {completed}   Failed: {total_jobs - completed}")
 
         except Exception as e:
             self._log(f"[ERROR] Batch processing failed: {e}")
+            if hasattr(self, 'batch_progress_frame'):
+                self.batch_progress_frame.pack_forget()
             messagebox.showerror("Batch Error", f"Batch processing error:\n{e}")
         finally:
             self.batch_active = False
