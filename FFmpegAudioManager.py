@@ -548,7 +548,19 @@ class FFmpegAudioManager:
         style.configure('TButton', padding=6)
         style.configure('TLabel', padding=2)
         style.configure('TLabelframe', padding=6)
-        style.configure('Accent.TButton', font=('', 10, 'bold'), padding=8)
+
+        # Preserve theme colors for Accent.TButton
+        theme = self.theme_manager.current_theme if self.theme_manager else None
+        if theme:
+            style.configure('Accent.TButton',
+                          background=theme.accent_primary,
+                          foreground='#ffffff',
+                          font=('', 10, 'bold'),
+                          padding=8,
+                          borderwidth=0)
+        else:
+            style.configure('Accent.TButton', font=('', 10, 'bold'), padding=8)
+
         style.configure('Home.TButton', font=('', 11), padding=10)
 
         # Horizontal split: left = content+progress | right = log
@@ -590,7 +602,7 @@ class FFmpegAudioManager:
 
         if show_progress_log:
             self.left_pane.add(self.progress_panel, minsize=64)
-            self.outer_pane.add(self.log_panel, minsize=260, width=280)
+            self.outer_pane.add(self.log_panel, minsize=260, width=340)
         else:
             self.left_pane.remove(self.progress_panel)
             self.outer_pane.remove(self.log_panel)
@@ -632,7 +644,7 @@ class FFmpegAudioManager:
 
         # Content row: icon + text
         content1 = tk.Frame(card1, bg='white')
-        content1.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 10))
+        content1.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 12))
         extract_canvas = create_extract_icon(content1, 96)
         extract_canvas.pack(side=tk.LEFT, padx=(0, 16))
         text_frame1 = ttk.Frame(content1)
@@ -642,9 +654,12 @@ class FFmpegAudioManager:
         ttk.Label(text_frame1, text="Probe video files, pick an audio stream, and save it as a standalone audio file.",
                   foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
 
-        ttk.Button(card1, text="Open Extract Panel →",
+        # Button row
+        btn_row1 = tk.Frame(card1)
+        btn_row1.pack(fill=tk.X)
+        ttk.Button(btn_row1, text="Open Extract Panel →",
                    style='Accent.TButton',
-                   command=self._show_extract).pack(anchor='e', ipady=8, ipadx=14, pady=(4, 0))
+                   command=self._show_extract).pack(anchor='e', ipady=6, ipadx=12)
 
         # Card: Add
         card2 = ttk.LabelFrame(frame, text="", padding=14)
@@ -652,7 +667,7 @@ class FFmpegAudioManager:
 
         # Content row: icon + text
         content2 = tk.Frame(card2, bg='white')
-        content2.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 10))
+        content2.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 12))
         add_canvas = create_add_icon(content2, 96)
         add_canvas.pack(side=tk.LEFT, padx=(0, 16))
         text_frame2 = ttk.Frame(content2)
@@ -663,9 +678,12 @@ class FFmpegAudioManager:
                   "duration padding, and both FFmpeg / mkvmerge backends.",
                   foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
 
-        ttk.Button(card2, text="Open Add Audio Panel →",
+        # Button row
+        btn_row2 = tk.Frame(card2)
+        btn_row2.pack(fill=tk.X)
+        ttk.Button(btn_row2, text="Open Add Audio Panel →",
                    style='Accent.TButton',
-                   command=self._show_add).pack(anchor='e', ipady=8, ipadx=14, pady=(4, 0))
+                   command=self._show_add).pack(anchor='e', ipady=6, ipadx=12)
 
         return frame
 
