@@ -1256,10 +1256,41 @@ class FFmpegAudioManager:
                     return
                 sync_choices[(vf, af)] = choice
 
-        self._log(f"[INFO] Processing {len(pairs)} video(s)  [tool={tool_choice}]:")
-        for vf, af in pairs:
-            self._log(f"  {os.path.basename(vf)}  +  {os.path.basename(af)}")
-        self._start_task(lambda: self._run_add_audio(pairs, out_dir, tool_choice, sync_choices))
+        # Check if batch mode is enabled
+        use_batch = self.batch_mode_var.get() if hasattr(self, 'batch_mode_var') else False
+
+        if use_batch and self.batch_processor:
+            # Batch mode: queue all jobs and start processing
+            self._log(f"[INFO] Queuing {len(pairs)} video(s) for batch processing  [tool={tool_choice}]:")
+            for vf, af in pairs:
+                self._log(f"  → {os.path.basename(vf)}  +  {os.path.basename(af)}")
+
+            try:
+                max_parallel = int(self.batch_max_parallel_var.get())
+                self.batch_processor.max_parallel = max_parallel
+            except (ValueError, AttributeError):
+                self.batch_processor.max_parallel = max(1, os.cpu_count() - 1 if os.cpu_count() else 3)
+
+            # Add all jobs to batch processor
+            for vf, af in pairs:
+                output_file = os.path.join(out_dir, os.path.basename(vf))
+                self.batch_processor.add_job(vf, af, output_file)
+
+            # Start batch processing thread
+            self.batch_active = True
+            self.batch_thread = threading.Thread(
+                target=self._run_batch_processor,
+                args=(out_dir, tool_choice, sync_choices),
+                daemon=True
+            )
+            self.batch_thread.start()
+            self._log(f"[START] Batch processing started (max {self.batch_processor.max_parallel} parallel)")
+        else:
+            # Single/sequential mode: use existing implementation
+            self._log(f"[INFO] Processing {len(pairs)} video(s)  [tool={tool_choice}]:")
+            for vf, af in pairs:
+                self._log(f"  {os.path.basename(vf)}  +  {os.path.basename(af)}")
+            self._start_task(lambda: self._run_add_audio(pairs, out_dir, tool_choice, sync_choices))
 
     def _ask_padding_options(self, vfile: str, afile: str, diff: float) -> Optional[dict]:
         """Show dialog for audio padding when audio is shorter than video.
@@ -1504,6 +1535,80 @@ class FFmpegAudioManager:
     # ══════════════════════════════════════════════════════════════════════════
     # Worker functions (background threads)
     # ══════════════════════════════════════════════════════════════════════════
+    def _run_batch_processor(self, out_dir: str, tool_choice: str, sync_choices: dict):
+        """Process queued batch jobs with parallel execution."""
+        if not self.batch_processor:
+            self._log("[ERROR] Batch processor not available")
+            return
+
+        try:
+            active_threads = {}
+            job_list = list(self.batch_processor.queue)
+            total_jobs = len(job_list)
+
+            self._log(f"[INFO] Starting batch: {total_jobs} job(s), max {self.batch_processor.max_parallel} parallel")
+
+            completed = 0
+            failed = 0
+            idx = 0
+
+            # Process jobs with parallelism limit
+            while idx < total_jobs or active_threads:
+                # Start new jobs up to max_parallel limit
+                while idx < total_jobs and len(active_threads) < self.batch_processor.max_parallel:
+                    job = job_list[idx]
+                    idx += 1
+
+                    self._log(f"[START] [{idx}/{total_jobs}] {os.path.basename(job.video_file)}")
+
+                    # Start merge in background thread
+                    def do_merge(j=job):
+                        try:
+                            # Extract sync choice if present
+                            key = (j.video_file, j.audio_file)
+                            sync_choice = sync_choices.get(key)
+
+                            # Call the merge function
+                            self._merge_ffmpeg(
+                                j.video_file, j.audio_file, j.output_file,
+                                tool_choice, sync_choice
+                            )
+                            return True
+                        except Exception as e:
+                            self._log(f"[ERROR] Failed to merge: {e}")
+                            return False
+
+                    thread = threading.Thread(target=do_merge, daemon=True)
+                    thread.start()
+                    active_threads[idx - 1] = (thread, job)
+
+                # Check for completed threads
+                completed_ids = []
+                for job_idx, (thread, job) in active_threads.items():
+                    if not thread.is_alive():
+                        completed_ids.append(job_idx)
+                        self._log(f"[OK] Completed: {os.path.basename(job.video_file)}")
+                        completed += 1
+
+                # Remove completed threads
+                for job_idx in completed_ids:
+                    del active_threads[job_idx]
+
+                # Brief sleep to avoid busy-waiting
+                time.sleep(0.1)
+
+            self._log(f"[DONE] Batch complete - Success: {completed}, Failed: {total_jobs - completed}")
+            messagebox.showinfo("Batch Complete",
+                f"Batch processing finished!\n\nSuccess: {completed}   Failed: {total_jobs - completed}")
+
+        except Exception as e:
+            self._log(f"[ERROR] Batch processing failed: {e}")
+            messagebox.showerror("Batch Error", f"Batch processing error:\n{e}")
+        finally:
+            self.batch_active = False
+            if self.batch_processor:
+                self.batch_processor.job_queue.clear()
+
     def _run_extract(self, entries: List[VideoEntry], out_dir: str):
         total = len(entries)
         success = failed = 0
