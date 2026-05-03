@@ -39,6 +39,12 @@ except ImportError:
     detect_gpu_encoders = lambda: []
     build_gpu_encode_args = lambda *args: ([], False)
 
+try:
+    from BatchProcessor import BatchProcessor, BatchProcessorUI
+except ImportError:
+    BatchProcessor = None
+    BatchProcessorUI = None
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -492,6 +498,18 @@ class FFmpegAudioManager:
         self.gpu_quality_var = tk.StringVar(value='balanced')
         if self.gpu_encoders:
             self.gpu_encoder_var.set(self.gpu_encoders[0].name)
+
+        # Batch processing settings
+        if BatchProcessor:
+            self.batch_processor = BatchProcessor()
+            self.batch_active = False
+            self.batch_thread: Optional[threading.Thread] = None
+            self.batch_max_parallel_var = tk.StringVar(value=str(self.batch_processor.max_parallel))
+        else:
+            self.batch_processor = None
+            self.batch_active = False
+            self.batch_thread = None
+            self.batch_max_parallel_var = tk.StringVar(value="4")
 
         # UI panels (set during _build_ui)
         self.content_area  = None
