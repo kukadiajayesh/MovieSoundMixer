@@ -958,7 +958,8 @@ class FFmpegAudioManager:
         self.gpu_enabled_check = ttk.Checkbutton(
             gpu_frame,
             text=f"Enable GPU encoding  {gpu_status}",
-            variable=self.gpu_enabled
+            variable=self.gpu_enabled,
+            command=self._toggle_gpu_controls
         )
         self.gpu_enabled_check.pack(anchor='w', padx=4, pady=(2, 4))
 
@@ -967,19 +968,25 @@ class FFmpegAudioManager:
             enc_frame.pack(fill=tk.X, padx=20, pady=2)
             ttk.Label(enc_frame, text="Encoder:", width=12, anchor='w').pack(side=tk.LEFT)
             enc_names = [f"{e.display_name()}" for e in self.gpu_encoders]
-            enc_menu = ttk.Combobox(enc_frame, textvariable=self.gpu_encoder_var,
+            self.gpu_encoder_menu = ttk.Combobox(enc_frame, textvariable=self.gpu_encoder_var,
                                     values=enc_names, state='readonly', width=32)
-            enc_menu.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+            self.gpu_encoder_menu.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
             qual_frame = ttk.Frame(gpu_frame)
             qual_frame.pack(fill=tk.X, padx=20, pady=2)
             ttk.Label(qual_frame, text="Quality:", width=12, anchor='w').pack(side=tk.LEFT)
-            ttk.Radiobutton(qual_frame, text="Fast", variable=self.gpu_quality_var,
-                            value='fast').pack(side=tk.LEFT, padx=2)
-            ttk.Radiobutton(qual_frame, text="Balanced", variable=self.gpu_quality_var,
-                            value='balanced').pack(side=tk.LEFT, padx=2)
-            ttk.Radiobutton(qual_frame, text="Quality", variable=self.gpu_quality_var,
-                            value='quality').pack(side=tk.LEFT, padx=2)
+            self.gpu_quality_fast = ttk.Radiobutton(qual_frame, text="Fast", variable=self.gpu_quality_var,
+                            value='fast')
+            self.gpu_quality_fast.pack(side=tk.LEFT, padx=2)
+            self.gpu_quality_balanced = ttk.Radiobutton(qual_frame, text="Balanced", variable=self.gpu_quality_var,
+                            value='balanced')
+            self.gpu_quality_balanced.pack(side=tk.LEFT, padx=2)
+            self.gpu_quality_quality = ttk.Radiobutton(qual_frame, text="Quality", variable=self.gpu_quality_var,
+                            value='quality')
+            self.gpu_quality_quality.pack(side=tk.LEFT, padx=2)
+
+            # Update control states based on checkbox
+            self._toggle_gpu_controls()
         else:
             ttk.Label(gpu_frame, text="No GPU encoders detected on this system.",
                       foreground='#666').pack(anchor='w', padx=4, pady=2)
@@ -1519,6 +1526,24 @@ class FFmpegAudioManager:
             self.theme_manager.toggle_dark_mode()
             self.dark_mode_var.set(self.theme_manager.dark_mode)
             self._rebuild_ui_theme()
+
+    def _toggle_gpu_controls(self) -> None:
+        """Enable/disable GPU encoder controls based on checkbox state."""
+        if not self.gpu_encoders:
+            return
+
+        enabled = self.gpu_enabled.get()
+        state = tk.NORMAL if enabled else tk.DISABLED
+
+        # Disable encoder menu and quality buttons if GPU is not enabled
+        if hasattr(self, 'gpu_encoder_menu'):
+            self.gpu_encoder_menu.config(state='readonly' if enabled else tk.DISABLED)
+        if hasattr(self, 'gpu_quality_fast'):
+            self.gpu_quality_fast.config(state=state)
+        if hasattr(self, 'gpu_quality_balanced'):
+            self.gpu_quality_balanced.config(state=state)
+        if hasattr(self, 'gpu_quality_quality'):
+            self.gpu_quality_quality.config(state=state)
 
     def _update_batch_progress(self, completed: int, total: int) -> None:
         """Update batch progress display."""
