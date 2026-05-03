@@ -33,6 +33,12 @@ import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple
 
+try:
+    from GPUAccelerator import detect_gpu_encoders, build_gpu_encode_args
+except ImportError:
+    detect_gpu_encoders = lambda: []
+    build_gpu_encode_args = lambda *args: ([], False)
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -479,6 +485,14 @@ class FFmpegAudioManager:
         self.add_entries:   List[AddEntry]   = []
         self.last_audio_pick_dir: Optional[str] = None
 
+        # GPU settings
+        self.gpu_encoders = detect_gpu_encoders()
+        self.gpu_enabled = tk.BooleanVar(value=bool(self.gpu_encoders))
+        self.gpu_encoder_var = tk.StringVar()
+        self.gpu_quality_var = tk.StringVar(value='balanced')
+        if self.gpu_encoders:
+            self.gpu_encoder_var.set(self.gpu_encoders[0].name)
+
         # UI panels (set during _build_ui)
         self.content_area  = None
         self.home_frame    = None
@@ -887,6 +901,41 @@ class FFmpegAudioManager:
                   text="Audio files are matched automatically by episode (SxxExx). "
                        "Double-click a row or click the Audio cell to override manually.",
                   foreground='#666', wraplength=560).pack(anchor='w', pady=(2, 0))
+
+        # GPU Hardware Acceleration
+        gpu_frame = ttk.LabelFrame(content, text="GPU Hardware Acceleration", padding=4)
+        gpu_frame.pack(fill=tk.X, pady=(6, 4))
+
+        gpu_status = f"({len(self.gpu_encoders)} encoder detected)" if len(self.gpu_encoders) == 1 else \
+                     f"({len(self.gpu_encoders)} encoders detected)" if self.gpu_encoders else "(No GPU encoders)"
+        self.gpu_enabled_check = ttk.Checkbutton(
+            gpu_frame,
+            text=f"Enable GPU encoding  {gpu_status}",
+            variable=self.gpu_enabled
+        )
+        self.gpu_enabled_check.pack(anchor='w', padx=4, pady=(2, 4))
+
+        if self.gpu_encoders:
+            enc_frame = ttk.Frame(gpu_frame)
+            enc_frame.pack(fill=tk.X, padx=20, pady=2)
+            ttk.Label(enc_frame, text="Encoder:", width=12, anchor='w').pack(side=tk.LEFT)
+            enc_names = [f"{e.display_name()}" for e in self.gpu_encoders]
+            enc_menu = ttk.Combobox(enc_frame, textvariable=self.gpu_encoder_var,
+                                    values=enc_names, state='readonly', width=32)
+            enc_menu.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+
+            qual_frame = ttk.Frame(gpu_frame)
+            qual_frame.pack(fill=tk.X, padx=20, pady=2)
+            ttk.Label(qual_frame, text="Quality:", width=12, anchor='w').pack(side=tk.LEFT)
+            ttk.Radiobutton(qual_frame, text="Fast", variable=self.gpu_quality_var,
+                            value='fast').pack(side=tk.LEFT, padx=2)
+            ttk.Radiobutton(qual_frame, text="Balanced", variable=self.gpu_quality_var,
+                            value='balanced').pack(side=tk.LEFT, padx=2)
+            ttk.Radiobutton(qual_frame, text="Quality", variable=self.gpu_quality_var,
+                            value='quality').pack(side=tk.LEFT, padx=2)
+        else:
+            ttk.Label(gpu_frame, text="No GPU encoders detected on this system.",
+                      foreground='#666').pack(anchor='w', padx=4, pady=2)
 
         # Merge Tool
         tool_frame = ttk.LabelFrame(content, text="Merge Tool", padding=4)
@@ -1579,11 +1628,45 @@ class FFmpegAudioManager:
                        '-c:v', 'copy', '-c:a', detected_codec,
                        out]
         else:
-            cmd = ['ffmpeg', '-y',
-                   '-i', vfile, '-i', afile,
-                   '-map', '0:v', '-map', '0:a', '-map', '1:a', '-map', '0:s?',
-                   '-c', 'copy',
-                   out]
+            use_gpu = self.gpu_enabled.get() and self.gpu_encoders
+            if use_gpu:
+                try:
+                    encoder_name = None
+                    quality = self.gpu_quality_var.get()
+
+                    for enc in self.gpu_encoders:
+                        if enc.display_name() in self.gpu_encoder_var.get():
+                            encoder_name = enc.name
+                            break
+
+                    if encoder_name:
+                        gpu_args, _ = build_gpu_encode_args(encoder_name, quality)
+                        self._log(f"[INFO] Using GPU encoder: {encoder_name}")
+                        cmd = ['ffmpeg', '-y',
+                               '-i', vfile, '-i', afile,
+                               '-map', '0:v', '-map', '0:a', '-map', '1:a', '-map', '0:s?',
+                               *gpu_args,
+                               '-c:a', 'copy',
+                               out]
+                    else:
+                        cmd = ['ffmpeg', '-y',
+                               '-i', vfile, '-i', afile,
+                               '-map', '0:v', '-map', '0:a', '-map', '1:a', '-map', '0:s?',
+                               '-c', 'copy',
+                               out]
+                except Exception as e:
+                    self._log(f"[WARN] GPU encoding unavailable: {e}, using CPU")
+                    cmd = ['ffmpeg', '-y',
+                           '-i', vfile, '-i', afile,
+                           '-map', '0:v', '-map', '0:a', '-map', '1:a', '-map', '0:s?',
+                           '-c', 'copy',
+                           out]
+            else:
+                cmd = ['ffmpeg', '-y',
+                       '-i', vfile, '-i', afile,
+                       '-map', '0:v', '-map', '0:a', '-map', '1:a', '-map', '0:s?',
+                       '-c', 'copy',
+                       out]
         return self._run_ffmpeg(cmd, label, out, item_idx, total)
 
     # ── Subprocess runners ──────────────────────────────────────────────────
