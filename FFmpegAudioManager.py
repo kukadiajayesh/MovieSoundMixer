@@ -45,6 +45,11 @@ except ImportError:
     BatchProcessor = None
     BatchProcessorUI = None
 
+try:
+    from UITheme import UIThemeManager
+except ImportError:
+    UIThemeManager = None
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -511,6 +516,10 @@ class FFmpegAudioManager:
             self.batch_thread = None
             self.batch_max_parallel_var = tk.StringVar(value="4")
 
+        # Theme system
+        self.theme_manager = UIThemeManager() if UIThemeManager else None
+        self.dark_mode_var = tk.BooleanVar(value=self.theme_manager.dark_mode if self.theme_manager else False)
+
         # UI panels (set during _build_ui)
         self.content_area  = None
         self.home_frame    = None
@@ -526,6 +535,11 @@ class FFmpegAudioManager:
     # ══════════════════════════════════════════════════════════════════════════
     def _build_ui(self):
         style = ttk.Style()
+
+        # Apply theme if available
+        if self.theme_manager:
+            self.theme_manager.configure_ttk_style(style)
+
         style.configure('Treeview', rowheight=28)
         style.configure('Accent.TButton', font=('', 10, 'bold'))
         style.configure('Home.TButton', font=('', 11))
@@ -603,6 +617,14 @@ class FFmpegAudioManager:
                 font=('', 9, 'bold'), bg='white').pack(side=tk.LEFT, padx=(4, 12))
         tk.Label(status_frame, text=f"mkvmerge {mkvmerge_status}", fg=mkvmerge_color,
                 font=('', 9, 'bold'), bg='white').pack(side=tk.LEFT)
+
+        # Dark mode toggle (if theme manager available)
+        if self.theme_manager:
+            theme_frame = tk.Frame(frame, bg='white')
+            theme_frame.pack(fill=tk.X, pady=(0, 12))
+            ttk.Button(theme_frame,
+                      text='🌙 Dark Mode' if not self.theme_manager.dark_mode else '☀️ Light Mode',
+                      command=self._on_theme_toggle).pack(side=tk.LEFT)
 
         # Card: Extract
         card1 = ttk.LabelFrame(frame, text="", padding=12)
@@ -971,6 +993,28 @@ class FFmpegAudioManager:
                         text="Force FFmpeg  —  compatible with more containers",
                         variable=self.add_tool_var, value="ffmpeg")
         self.rb_ffmpeg.pack(anchor='w', padx=4)
+
+        # Batch Processing
+        if self.batch_processor:
+            batch_frame = ttk.LabelFrame(content, text="Batch Processing", padding=4)
+            batch_frame.pack(fill=tk.X, pady=(6, 4))
+
+            self.batch_mode_var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(batch_frame,
+                           text=f"Enable parallel batch processing  (max {self.batch_processor.max_parallel} concurrent)",
+                           variable=self.batch_mode_var).pack(anchor='w', padx=4, pady=2)
+
+            par_frame = ttk.Frame(batch_frame)
+            par_frame.pack(fill=tk.X, padx=20, pady=2)
+            ttk.Label(par_frame, text="Processes:", width=12, anchor='w').pack(side=tk.LEFT)
+            self.batch_parallel_spin = ttk.Spinbox(par_frame,
+                                                   from_=1,
+                                                   to=self.batch_processor.max_parallel,
+                                                   textvariable=self.batch_max_parallel_var,
+                                                   width=4)
+            self.batch_parallel_spin.pack(side=tk.LEFT, padx=4)
+            ttk.Label(par_frame, text=f"(system: {self.batch_processor.max_parallel} cores)",
+                     foreground='#666').pack(side=tk.LEFT)
 
         # Output folder + action button
         bot = ttk.Frame(content)
@@ -1407,6 +1451,30 @@ class FFmpegAudioManager:
         self.root.wait_window(dialog)
 
         return result['choice'] and result or None
+
+    def _on_theme_toggle(self):
+        """Toggle dark mode on/off and refresh UI."""
+        if self.theme_manager:
+            self.theme_manager.toggle_dark_mode()
+            self.dark_mode_var.set(self.theme_manager.dark_mode)
+            self._rebuild_ui_theme()
+
+    def _rebuild_ui_theme(self):
+        """Rebuild UI with new theme colors."""
+        if not self.theme_manager:
+            return
+
+        style = ttk.Style()
+        self.theme_manager.configure_ttk_style(style)
+
+        # Update log panel colors
+        bg = self.theme_manager.get_color('bg_secondary')
+        fg = self.theme_manager.get_color('fg_primary')
+        if hasattr(self, 'log_text'):
+            self.log_text.configure(bg=bg, fg=fg)
+
+        # Rebuild home panel to update button text
+        self.home_frame = self._build_home_panel()
 
     def _on_cancel(self):
         self.cancel_flag.set()
