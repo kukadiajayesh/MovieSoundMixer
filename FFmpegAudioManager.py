@@ -34,19 +34,19 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple
 
 try:
-    from GPUAccelerator import detect_gpu_encoders, build_gpu_encode_args
+    from modules.GPUAccelerator import detect_gpu_encoders, build_gpu_encode_args
 except ImportError:
     detect_gpu_encoders = lambda: []
     build_gpu_encode_args = lambda *args: ([], False)
 
 try:
-    from BatchProcessor import BatchProcessor, BatchProcessorUI
+    from modules.BatchProcessor import BatchProcessor, BatchProcessorUI
 except ImportError:
     BatchProcessor = None
     BatchProcessorUI = None
 
 try:
-    from UITheme import UIThemeManager
+    from modules.UITheme import UIThemeManager
 except ImportError:
     UIThemeManager = None
 
