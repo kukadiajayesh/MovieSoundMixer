@@ -590,7 +590,7 @@ class FFmpegAudioManager:
 
         if show_progress_log:
             self.left_pane.add(self.progress_panel, minsize=64)
-            self.outer_pane.add(self.log_panel, minsize=260, width=340)
+            self.outer_pane.add(self.log_panel, minsize=260, width=280)
         else:
             self.left_pane.remove(self.progress_panel)
             self.outer_pane.remove(self.log_panel)
@@ -625,13 +625,6 @@ class FFmpegAudioManager:
         tk.Label(status_frame, text=f"mkvmerge {mkvmerge_status}", fg=mkvmerge_color,
                 font=('', 9, 'bold'), bg='white').pack(side=tk.LEFT)
 
-        # Dark mode toggle (if theme manager available)
-        if self.theme_manager:
-            theme_frame = tk.Frame(frame, bg='white')
-            theme_frame.pack(fill=tk.X, pady=(0, 12))
-            ttk.Button(theme_frame,
-                      text='🌙 Dark Mode' if not self.theme_manager.dark_mode else '☀️ Light Mode',
-                      command=self._on_theme_toggle).pack(side=tk.LEFT)
 
         # Card: Extract
         card1 = ttk.LabelFrame(frame, text="", padding=14)
