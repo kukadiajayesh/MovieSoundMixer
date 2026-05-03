@@ -260,11 +260,20 @@
    - Theme integration verified
    - UI consistency maintained
 
+6. **GPU Encoder Control Fix** ✅
+   - Only available GPU encoders are listed (from FFmpeg)
+   - GPU encoding only occurs if checkbox is ticked
+   - Encoder menu and quality buttons disabled when GPU is off
+   - Visual feedback for disabled state
+   - CPU fallback if GPU encoding fails
+
 ### Git Commits
 
 1. **5df66a2** - ui: Improve layout spacing and button styling
 2. **56b9dce** - docs: Update Phase 3 status with UI improvements
 3. **12c0db8** - test: Phase 3 UI testing - all 6 tests passed
+4. **362354a** - docs: Phase 3 completion summary
+5. **794a9e6** - fix: GPU encoder controls now properly disabled when unchecked
 
 ### Code Quality
 
