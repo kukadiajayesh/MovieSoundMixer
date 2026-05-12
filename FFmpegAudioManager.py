@@ -67,15 +67,15 @@ TIME_PAT = re.compile(r'time=(\d+):(\d+):(\d+\.?\d*)')
 
 # ── Log tag colours (dark background) ───────────────────────────────────────
 LOG_TAGS = {
-    '[OK]':        {'foreground': '#6ec97a'},   # green
-    '[ERROR]':     {'foreground': '#f28779'},   # salmon
-    '[EXCEPTION]': {'foreground': '#f28779'},
-    '[CANCEL]':    {'foreground': '#ffb347'},   # orange
-    '[INFO]':      {'foreground': '#79c7e3'},   # cyan
-    '[WARN]':      {'foreground': '#ffe066'},   # yellow
-    '[DONE]':      {'foreground': '#6ec97a'},
-    '[START]':     {'foreground': '#b0b0b0'},
-    'CMD':         {'foreground': '#707070'},   # dim
+    '[OK]':        {'foreground': '#27ae60'},   # green
+    '[ERROR]':     {'foreground': '#c0392b'},   # red
+    '[EXCEPTION]': {'foreground': '#c0392b'},
+    '[CANCEL]':    {'foreground': '#d68910'},   # orange
+    '[INFO]':      {'foreground': '#0084c8'},   # cyan
+    '[WARN]':      {'foreground': '#d68910'},   # yellow
+    '[DONE]':      {'foreground': '#27ae60'},
+    '[START]':     {'foreground': '#a6aab3'},
+    'CMD':         {'foreground': '#656870'},   # dim
 }
 
 
@@ -246,77 +246,7 @@ class DependencyDialog(tk.Toplevel):
         self.destroy()
 
 
-def create_extract_icon(parent, size: int = 96) -> tk.Canvas:
-    canvas = tk.Canvas(parent, width=size, height=size, bg='white', highlightthickness=0)
 
-    margin = size // 10
-
-    # Gradient-like blue background
-    for i in range(margin, size - margin):
-        ratio = (i - margin) / (size - 2 * margin)
-        color_val = int(70 + (100 * ratio))
-        color = f'#{color_val:02x}82{int(220 - 50*ratio):02x}'
-        canvas.create_line(margin, i, size - margin, i, fill=color, width=1)
-
-    # Draw upward arrow
-    center_x, center_y = size // 2, size // 2
-    arrow_size = size // 4
-
-    # Arrow shaft
-    canvas.create_rectangle(center_x - arrow_size//6, center_y - arrow_size//2,
-                           center_x + arrow_size//6, center_y + arrow_size//4,
-                           fill='white', outline='white')
-
-    # Arrow head (triangle pointing up)
-    canvas.create_polygon(
-        center_x, center_y - arrow_size,
-        center_x - arrow_size//2, center_y - arrow_size//3,
-        center_x + arrow_size//2, center_y - arrow_size//3,
-        fill='white', outline='white'
-    )
-
-    return canvas
-
-
-def create_add_icon(parent, size: int = 96) -> tk.Canvas:
-    canvas = tk.Canvas(parent, width=size, height=size, bg='white', highlightthickness=0)
-
-    margin = size // 10
-
-    # Gradient-like orange/gold background
-    for i in range(margin, size - margin):
-        ratio = (i - margin) / (size - 2 * margin)
-        color_val = int(220 + (35 * ratio))
-        color = f'#{color_val:02x}{int(180 - 50*ratio):02x}46'
-        canvas.create_line(margin, i, size - margin, i, fill=color, width=1)
-
-    # Draw two audio tracks merging (mixing icon)
-    center_x, center_y = size // 2, size // 2
-    track_width = size // 5
-    line_width = 3
-
-    # Top audio track (coming from left)
-    canvas.create_line(margin + 8, center_y - track_width,
-                      center_x - 8, center_y - 8,
-                      fill='white', width=line_width)
-
-    # Bottom audio track (coming from left)
-    canvas.create_line(margin + 8, center_y + track_width,
-                      center_x - 8, center_y + 8,
-                      fill='white', width=line_width)
-
-    # Merged track (going right)
-    canvas.create_line(center_x + 8, center_y,
-                      size - margin - 8, center_y,
-                      fill='white', width=line_width)
-
-    # Mixer node (small circle where they meet)
-    node_size = size // 12
-    canvas.create_oval(center_x - node_size, center_y - node_size,
-                      center_x + node_size, center_y + node_size,
-                      fill='white', outline='white')
-
-    return canvas
 
 
 def _probe_audio_streams(filepath: str) -> List['AudioStreamInfo']:
@@ -525,7 +455,6 @@ class FFmpegAudioManager:
 
         # UI panels (set during _build_ui)
         self.content_area  = None
-        self.home_frame    = None
         self.extract_frame = None
         self.add_frame     = None
 
@@ -561,33 +490,86 @@ class FFmpegAudioManager:
         else:
             style.configure('Accent.TButton', font=('', 10, 'bold'), padding=8)
 
-        style.configure('Home.TButton', font=('', 11), padding=10)
+        # Main window container
+        self.main_container = ttk.Frame(self.root)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Horizontal split: left = content+progress | right = log
-        outer = tk.PanedWindow(self.root, orient=tk.HORIZONTAL,
-                               sashwidth=6, sashrelief=tk.RAISED, bg='#aaa')
-        outer.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        # Sidebar
+        self.sidebar = self._build_sidebar(self.main_container)
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Left column: content area on top, progress panel on bottom
-        left = tk.PanedWindow(outer, orient=tk.VERTICAL,
-                              sashwidth=5, sashrelief=tk.RAISED, bg='#aaa')
-        self.content_area = tk.Frame(left)
-        left.add(self.content_area, minsize=360)
-        self.progress_panel = self._build_progress_panel(left)
-        left.add(self.progress_panel, minsize=64)
-        outer.add(left, minsize=500)
+        # Right side: split into content and bottom log drawer
+        border_color = self.theme_manager.get_color('border_color') if self.theme_manager else '#aaa'
+        bg_primary = self.theme_manager.get_color('bg_primary') if self.theme_manager else '#fff'
+        self.right_pane = tk.PanedWindow(self.main_container, orient=tk.VERTICAL, sashwidth=2, bg=border_color, sashrelief=tk.FLAT, bd=0)
+        self.right_pane.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=6, pady=6)
 
-        # Right column: log panel
-        self.log_panel = self._build_log_panel(outer)
-        outer.add(self.log_panel, minsize=260, width=340)
+        self.content_area = ttk.Frame(self.right_pane)
+        self.right_pane.add(self.content_area, minsize=300)
 
-        self.home_frame    = self._build_home_panel()
+        self.progress_panel = self._build_progress_panel(self.right_pane)
+        self.log_panel = self._build_log_panel(self.right_pane)
+
         self.extract_frame = self._build_extract_panel()
         self.add_frame     = self._build_add_audio_panel()
 
-        self.outer_pane = outer
-        self.left_pane = left
-        self._show_home()
+        self.log_drawer_visible = False
+        self._show_extract()
+
+    def _build_sidebar(self, parent):
+        bg_col = self.theme_manager.get_color('bg_secondary') if self.theme_manager else ('#2d2d2d' if self.dark_mode_var.get() else '#f0f0f0')
+        frame = tk.Frame(parent, width=180, bg=bg_col)
+        frame.pack_propagate(False)
+
+        # Title
+        fg_col = self.theme_manager.get_color('fg_secondary') if self.theme_manager else '#888'
+        tk.Label(frame, text="Workspace", font=('', 10, 'bold'), bg=bg_col, fg=fg_col).pack(anchor='w', padx=10, pady=(20, 10))
+
+        # Nav buttons
+        self.btn_extract = ttk.Button(frame, text="Extract Audio", command=self._show_extract)
+        self.btn_extract.pack(fill=tk.X, padx=10, pady=4)
+
+        self.btn_merge = ttk.Button(frame, text="Merge Audio", command=self._show_add)
+        self.btn_merge.pack(fill=tk.X, padx=10, pady=4)
+
+        self.btn_history = ttk.Button(frame, text="History", state=tk.DISABLED)
+        self.btn_history.pack(fill=tk.X, padx=10, pady=4)
+
+        # Spacer
+        tk.Frame(frame, bg=bg_col).pack(fill=tk.BOTH, expand=True)
+
+        # Status dots
+        status_frame = tk.Frame(frame, bg=bg_col)
+        status_frame.pack(fill=tk.X, padx=10, pady=20)
+
+        ffmpeg_path = check_ffmpeg()
+        mkvmerge_path = find_mkvmerge()
+
+        fg_primary = self.theme_manager.get_color('fg_primary') if self.theme_manager else ('#ccc' if self.dark_mode_var.get() else '#333')
+
+        def add_status(lbl, ok, warn=False):
+            row = tk.Frame(status_frame, bg=bg_col)
+            row.pack(fill=tk.X, pady=2)
+            color = self.theme_manager.get_color('accent_success') if ok and self.theme_manager else '#6ec97a'
+            if not ok:
+                color = self.theme_manager.get_color('accent_warning') if warn and self.theme_manager else ('#ffe066' if warn else '#f28779')
+            if not ok and not warn:
+                color = self.theme_manager.get_color('accent_error') if self.theme_manager else '#f28779'
+
+            tk.Label(row, text="●", fg=color, bg=bg_col, font=('', 10)).pack(side=tk.LEFT)
+            tk.Label(row, text=lbl, bg=bg_col, fg=fg_primary, font=('', 9)).pack(side=tk.LEFT, padx=5)
+
+        add_status("FFmpeg ready" if ffmpeg_path else "FFmpeg missing", bool(ffmpeg_path))
+        add_status("mkvmerge ready" if mkvmerge_path else "mkvmerge optional", bool(mkvmerge_path), warn=not bool(mkvmerge_path))
+
+        gpu_count = len(self.gpu_encoders)
+        add_status(f"{gpu_count} GPU encoders" if gpu_count else "GPU not detected", gpu_count > 0)
+
+        # Theme toggle at bottom
+        if self.theme_manager:
+            ttk.Checkbutton(frame, text="Dark Mode", variable=self.dark_mode_var, command=self._on_theme_toggle).pack(side=tk.BOTTOM, anchor='w', padx=10, pady=10)
+
+        return frame
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
     def _on_window_close(self):
@@ -595,97 +577,28 @@ class FFmpegAudioManager:
         self.root.destroy()
 
     # ── Navigation ──────────────────────────────────────────────────────────
-    def _show_panel(self, frame: tk.Frame, show_progress_log=False):
+    def _show_panel(self, frame: tk.Frame):
         for w in self.content_area.winfo_children():
             w.pack_forget()
         frame.pack(fill=tk.BOTH, expand=True)
-
-        if show_progress_log:
-            self.left_pane.add(self.progress_panel, minsize=64)
-            self.outer_pane.add(self.log_panel, minsize=260, width=340)
+        # Always show progress panel
+        self.right_pane.add(self.progress_panel, minsize=64)
+        if self.log_drawer_visible:
+            self.right_pane.add(self.log_panel, minsize=150)
         else:
-            self.left_pane.remove(self.progress_panel)
-            self.outer_pane.remove(self.log_panel)
+            self.right_pane.remove(self.log_panel)
 
-    def _show_home(self):    self._show_panel(self.home_frame, show_progress_log=False)
-    def _show_extract(self): self._show_panel(self.extract_frame, show_progress_log=True)
-    def _show_add(self):     self._show_panel(self.add_frame, show_progress_log=True)
+    def _show_extract(self): self._show_panel(self.extract_frame)
+    def _show_add(self):     self._show_panel(self.add_frame)
 
-    # ── Home Panel ──────────────────────────────────────────────────────────
-    def _build_home_panel(self) -> tk.Frame:
-        frame = ttk.Frame(self.content_area, padding=24)
-
-        ttk.Label(frame, text="FFmpeg Audio Manager",
-                  font=('', 20, 'bold')).pack(pady=(0, 6))
-        ttk.Label(frame, text="Manage audio tracks in your video files",
-                  font=('', 10), foreground='#888').pack(pady=(0, 18))
-
-        # Status: Dependencies (single line)
-        ffmpeg_path = check_ffmpeg()
-        mkvmerge_path = find_mkvmerge()
-
-        ffmpeg_status = "✓" if ffmpeg_path else "✗"
-        mkvmerge_status = "✓" if mkvmerge_path else "○"
-        ffmpeg_color = '#6ec97a' if ffmpeg_path else '#f28779'
-        mkvmerge_color = '#6ec97a' if mkvmerge_path else '#ffe066'
-
-        status_frame = tk.Frame(frame, bg='white')
-        status_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(status_frame, text="Status:", font=('', 9), foreground='#666').pack(side=tk.LEFT)
-        tk.Label(status_frame, text=f" FFmpeg {ffmpeg_status}", fg=ffmpeg_color,
-                font=('', 9, 'bold'), bg='white').pack(side=tk.LEFT, padx=(4, 12))
-        tk.Label(status_frame, text=f"mkvmerge {mkvmerge_status}", fg=mkvmerge_color,
-                font=('', 9, 'bold'), bg='white').pack(side=tk.LEFT)
-
-
-        # Card: Extract
-        card1 = ttk.LabelFrame(frame, text="", padding=14)
-        card1.pack(fill=tk.X, pady=10, ipadx=4, ipady=4)
-
-        # Content row: icon + text
-        content1 = tk.Frame(card1, bg='white')
-        content1.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 12))
-        extract_canvas = create_extract_icon(content1, 96)
-        extract_canvas.pack(side=tk.LEFT, padx=(0, 16))
-        text_frame1 = ttk.Frame(content1)
-        text_frame1.pack(anchor='w', fill=tk.BOTH, expand=True, side=tk.LEFT)
-        ttk.Label(text_frame1, text="Extract Audio from Videos",
-                  font=('', 12, 'bold')).pack(anchor='w')
-        ttk.Label(text_frame1, text="Probe video files, pick an audio stream, and save it as a standalone audio file.",
-                  foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
-
-        # Button row
-        btn_row1 = tk.Frame(card1)
-        btn_row1.pack(fill=tk.X)
-        ttk.Button(btn_row1, text="Open Extract Panel →",
-                   style='Accent.TButton',
-                   command=self._show_extract).pack(anchor='e', ipady=6, ipadx=12)
-
-        # Card: Add
-        card2 = ttk.LabelFrame(frame, text="", padding=14)
-        card2.pack(fill=tk.X, pady=10, ipadx=4, ipady=4)
-
-        # Content row: icon + text
-        content2 = tk.Frame(card2, bg='white')
-        content2.pack(anchor='w', fill=tk.BOTH, expand=True, pady=(0, 12))
-        add_canvas = create_add_icon(content2, 96)
-        add_canvas.pack(side=tk.LEFT, padx=(0, 16))
-        text_frame2 = ttk.Frame(content2)
-        text_frame2.pack(anchor='w', fill=tk.BOTH, expand=True, side=tk.LEFT)
-        ttk.Label(text_frame2, text="Add Audio to Videos",
-                  font=('', 12, 'bold')).pack(anchor='w')
-        ttk.Label(text_frame2, text="Merge an external audio file into a video. Supports auto-matching by episode number, "
-                  "duration padding, and both FFmpeg / mkvmerge backends.",
-                  foreground='#666', wraplength=480).pack(anchor='w', pady=(6, 0))
-
-        # Button row
-        btn_row2 = tk.Frame(card2)
-        btn_row2.pack(fill=tk.X)
-        ttk.Button(btn_row2, text="Open Add Audio Panel →",
-                   style='Accent.TButton',
-                   command=self._show_add).pack(anchor='e', ipady=6, ipadx=12)
-
-        return frame
+    def _toggle_log_drawer(self):
+        self.log_drawer_visible = not self.log_drawer_visible
+        if self.log_drawer_visible:
+            self.right_pane.add(self.log_panel, minsize=150)
+            self.btn_toggle_log.config(text="Hide Log")
+        else:
+            self.right_pane.remove(self.log_panel)
+            self.btn_toggle_log.config(text="Show Log")
 
     # ── Log Panel ───────────────────────────────────────────────────────────
     def _build_log_panel(self, parent) -> tk.Frame:
@@ -698,9 +611,11 @@ class FFmpegAudioManager:
         ttk.Button(btn_row, text="Clear Log",
                    command=self._clear_log).pack(side=tk.RIGHT, padx=(0, 2))
 
-        self.log_text = tk.Text(frame, bg='#1e1e1e', fg='#c8c8c8',
+        bg_col = self.theme_manager.get_color('bg_primary') if self.theme_manager else '#1e1e1e'
+        fg_col = self.theme_manager.get_color('fg_primary') if self.theme_manager else '#c8c8c8'
+        self.log_text = tk.Text(frame, bg=bg_col, fg=fg_col,
                                 font=('Consolas', 10), wrap=tk.WORD,
-                                state=tk.DISABLED, height=15)
+                                state=tk.DISABLED, height=15, borderwidth=0)
         # Configure colour tags
         for key, cfg in LOG_TAGS.items():
             self.log_text.tag_configure(key, **cfg)
@@ -727,66 +642,95 @@ class FFmpegAudioManager:
             messagebox.showwarning("Empty", "Log is empty.")
 
     # ── Step 1: Extract ─────────────────────────────────────────────────────
+    def _format_size(self, size_bytes: int) -> str:
+        if size_bytes == 0: return "0 B"
+        import math
+        size_name = ("B", "KB", "MB", "GB", "TB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 1)
+        return f"{int(s) if s.is_integer() else s} {size_name[i]}"
+
     def _build_extract_panel(self) -> tk.Frame:
         frame = ttk.Frame(self.content_area)
 
+        # Header
         header = ttk.Frame(frame)
-        header.pack(fill=tk.X, pady=(0, 6))
-        ttk.Button(header, text="← Back", command=self._show_home).pack(side=tk.LEFT, padx=2)
-        ttk.Label(header, text="Step 1: Extract Audio from Video Files",
-                  font=('', 11, 'bold')).pack(side=tk.LEFT, padx=10)
+        header.pack(fill=tk.X, pady=(0, 10))
+
+        title_box = ttk.Frame(header)
+        title_box.pack(side=tk.LEFT, fill=tk.Y)
+        ttk.Label(title_box, text="Extract Audio", font=('', 16, 'bold')).pack(anchor='w', padx=2)
+        fg_muted = self.theme_manager.get_color('fg_secondary') if self.theme_manager else '#666'
+        ttk.Label(title_box, text="Probe video files, pick a stream, save audio as a standalone file.", foreground=fg_muted).pack(anchor='w', padx=2)
+
+        self.extract_clear_btn = ttk.Button(header, text="  Clear  ", command=self._clear_step1)
+        self.extract_clear_btn.pack(side=tk.RIGHT, anchor='n')
 
         content = ttk.LabelFrame(frame, text="", padding=8)
         content.pack(fill=tk.BOTH, expand=True)
 
+        # Toolbar
         tb = ttk.Frame(content)
         tb.pack(fill=tk.X, pady=(0, 8))
-        self.extract_add_files_btn = ttk.Button(tb, text="+ Add Files",
-                   command=self._add_files_step1)
+
+        self.extract_add_files_btn = ttk.Button(tb, text="+ Add Files", width=14, command=self._add_files_step1)
         self.extract_add_files_btn.pack(side=tk.LEFT, padx=3)
-        self.extract_add_folder_btn = ttk.Button(tb, text="+ Add Folder",
-                   command=self._add_folder_step1)
+        self.extract_add_folder_btn = ttk.Button(tb, text="+ Add Folder", width=14, command=self._add_folder_step1)
         self.extract_add_folder_btn.pack(side=tk.LEFT, padx=3)
         ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
-        self.extract_remove_btn = ttk.Button(tb, text="Remove Selected",
-                   command=self._remove_selected_step1)
-        self.extract_remove_btn.pack(side=tk.LEFT, padx=3)
-        self.extract_clear_btn = ttk.Button(tb, text="Clear All",
-                   command=self._clear_step1)
-        self.extract_clear_btn.pack(side=tk.LEFT, padx=3)
 
-        cols = ('#', 'File Name', 'Extract Stream  (click to change)')
+        # Search
+        tk.Label(tb, text="🔍", fg=fg_muted).pack(side=tk.LEFT)
+        self.extract_search_var = tk.StringVar()
+        self.extract_search_var.trace_add("write", lambda *args: self._rebuild_extract_tree())
+        self.extract_search_entry = ttk.Entry(tb, textvariable=self.extract_search_var, width=20)
+        self.extract_search_entry.pack(side=tk.LEFT, padx=3)
+
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
+
+        self.extract_remove_btn = ttk.Button(tb, text="Remove Selected", width=16, command=self._remove_selected_step1)
+        self.extract_remove_btn.pack(side=tk.LEFT, padx=3)
+
+        self.extract_ready_lbl = ttk.Label(tb, text="0/0 ready", foreground=fg_muted)
+        self.extract_ready_lbl.pack(side=tk.RIGHT, padx=3)
+
+        # Treeview
+        cols = ('#', 'File', 'Size', 'Stream', 'Status')
         tf = ttk.Frame(content)
         tf.pack(fill=tk.BOTH, expand=True)
 
-        self.extract_tree = ttk.Treeview(tf, columns=cols, show='headings',
-                                         height=5, selectmode='extended')
-        self.extract_tree.heading('#',         text='#')
-        self.extract_tree.heading('File Name', text='File Name')
-        self.extract_tree.heading(cols[2],     text=cols[2])
-        self.extract_tree.column('#',          width=36,  stretch=False, anchor='center')
-        self.extract_tree.column('File Name',  width=260, stretch=True)
-        self.extract_tree.column(cols[2],      width=400, stretch=True)
+        self.extract_tree = ttk.Treeview(tf, columns=cols, show='headings', height=5, selectmode='extended')
+        self.extract_tree.heading('#', text='#')
+        self.extract_tree.heading('File', text='File')
+        self.extract_tree.heading('Size', text='Size')
+        self.extract_tree.heading('Stream', text='Stream')
+        self.extract_tree.heading('Status', text='Status')
 
-        vsb = ttk.Scrollbar(tf, orient=tk.VERTICAL,   command=self.extract_tree.yview)
+        self.extract_tree.column('#', width=36, stretch=False, anchor='center')
+        self.extract_tree.column('File', width=260, stretch=True)
+        self.extract_tree.column('Size', width=80, stretch=False, anchor='e')
+        self.extract_tree.column('Stream', width=180, stretch=False)
+        self.extract_tree.column('Status', width=120, stretch=False)
+
+        vsb = ttk.Scrollbar(tf, orient=tk.VERTICAL, command=self.extract_tree.yview)
         hsb = ttk.Scrollbar(tf, orient=tk.HORIZONTAL, command=self.extract_tree.xview)
         self.extract_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        vsb.pack(side=tk.RIGHT,  fill=tk.Y)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.extract_tree.pack(fill=tk.BOTH, expand=True)
         self.extract_tree.bind('<ButtonRelease-1>', self._on_extract_tree_click)
 
+        # Bottom Frame
         bot = ttk.Frame(content)
         bot.pack(fill=tk.X, pady=(6, 0))
         ttk.Label(bot, text="Output Folder:", width=15, anchor='w').pack(side=tk.LEFT)
         self.extract_out_var = tk.StringVar()
         self.extract_out_entry = ttk.Entry(bot, textvariable=self.extract_out_var)
         self.extract_out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        self.extract_out_browse_btn = ttk.Button(bot, text="Browse...",
-                   command=lambda: self._browse_folder(self.extract_out_var))
+        self.extract_out_browse_btn = ttk.Button(bot, text="Browse...", width=10, command=lambda: self._browse_folder(self.extract_out_var))
         self.extract_out_browse_btn.pack(side=tk.LEFT)
-        self.extract_btn = ttk.Button(bot, text="  Extract Audio  ",
-                                      command=self._on_extract_clicked)
+        self.extract_btn = ttk.Button(bot, text="Extract Audio", width=16, style='Accent.TButton', command=self._on_extract_clicked)
         self.extract_btn.pack(side=tk.RIGHT, padx=(8, 0), ipady=4)
         return frame
 
@@ -795,10 +739,11 @@ class FFmpegAudioManager:
             return
         col  = self.extract_tree.identify_column(event.x)
         item = self.extract_tree.identify_row(event.y)
-        if not item or col != '#3':
+        # Check for column #4 (Stream)
+        if not item or col != '#4':
             return
 
-        idx   = self.extract_tree.index(item)
+        idx   = int(item)
         entry = self.video_entries[idx]
         if not entry.streams:
             return
@@ -808,9 +753,7 @@ class FFmpegAudioManager:
             return
         x, y, w, h = bbox
 
-        combo = ttk.Combobox(self.extract_tree,
-                             values=[s.display() for s in entry.streams],
-                             state='readonly', font=('', 10))
+        combo = ttk.Combobox(self.extract_tree, values=[s.display() for s in entry.streams], state='readonly', font=('', 10))
         combo.current(max(0, min(entry.selected_idx, len(entry.streams) - 1)))
         combo.place(x=x, y=y, width=w, height=h)
         combo.focus_set()
@@ -827,8 +770,7 @@ class FFmpegAudioManager:
     def _add_files_step1(self):
         files = filedialog.askopenfilenames(
             title="Select Video Files",
-            filetypes=[("Video files", "*.mkv *.mp4 *.avi *.mov *.ts *.m2ts"),
-                       ("All files", "*.*")])
+            filetypes=[("Video files", "*.mkv *.mp4 *.avi *.mov *.ts *.m2ts"), ("All files", "*.*")])
         for f in files:
             self._add_video_entry(f)
 
@@ -849,54 +791,92 @@ class FFmpegAudioManager:
         entry = VideoEntry(filepath)
         self.video_entries.append(entry)
         idx = len(self.video_entries) - 1
+
+        try:
+            size_str = self._format_size(os.path.getsize(filepath))
+        except:
+            size_str = "Unknown"
+
         self.extract_tree.insert('', tk.END, iid=str(idx),
-            values=(idx + 1, os.path.basename(filepath), 'Probing...'))
+            values=(idx + 1, os.path.basename(filepath), size_str, '—', 'Probing...'))
         self.probe_executor.submit(self._probe_entry, entry, idx)
+        self._update_extract_ready_count()
 
     def _probe_entry(self, entry: VideoEntry, idx: int):
         streams = _probe_audio_streams(entry.file)
         entry.streams      = streams
-        entry.probe_status = 'Ready' if streams else 'No audio streams found'
+        entry.probe_status = 'Ready' if streams else 'Error: No audio'
         self.log_queue.put(('refresh_extract_row', idx))
 
     def _refresh_extract_row(self, idx: int):
+        if idx >= len(self.video_entries):
+            return
         entry = self.video_entries[idx]
         iid   = str(idx)
         if not self.extract_tree.exists(iid):
             return
+
+        try:
+            size_str = self._format_size(os.path.getsize(entry.file))
+        except:
+            size_str = "Unknown"
+
         si = max(0, min(entry.selected_idx, len(entry.streams) - 1)) if entry.streams else 0
-        stream_disp = entry.streams[si].display() if entry.streams else entry.probe_status
-        self.extract_tree.item(iid, values=(idx + 1, os.path.basename(entry.file), stream_disp))
+        stream_disp = entry.streams[si].display() if entry.streams else "—"
+
+        self.extract_tree.item(iid, values=(idx + 1, os.path.basename(entry.file), size_str, stream_disp, entry.probe_status))
+        self._update_extract_ready_count()
 
     def _remove_selected_step1(self):
         sel = self.extract_tree.selection()
         if not sel:
             return
-        for i in sorted({self.extract_tree.index(i) for i in sel}, reverse=True):
-            del self.video_entries[i]
+        for item in sorted(sel, key=int, reverse=True):
+            del self.video_entries[int(item)]
         self._rebuild_extract_tree()
 
     def _clear_step1(self):
         self.video_entries.clear()
-        self.extract_tree.delete(*self.extract_tree.get_children())
+        self._rebuild_extract_tree()
+
+    def _update_extract_ready_count(self):
+        if not hasattr(self, 'extract_ready_lbl'):
+            return
+        total = len(self.video_entries)
+        ready = sum(1 for e in self.video_entries if e.probe_status in ('Ready', 'Done'))
+        self.extract_ready_lbl.config(text=f"{ready}/{total} ready")
 
     def _rebuild_extract_tree(self):
         self.extract_tree.delete(*self.extract_tree.get_children())
-        for i, e in enumerate(self.video_entries):
-            si = max(0, min(e.selected_idx, len(e.streams) - 1)) if e.streams else 0
-            stream_disp = e.streams[si].display() if e.streams else e.probe_status
-            self.extract_tree.insert('', tk.END, iid=str(i),
-                values=(i + 1, os.path.basename(e.file), stream_disp))
+        search_query = getattr(self, 'extract_search_var', tk.StringVar()).get().lower() if hasattr(self, 'extract_search_var') else ''
 
-    # ── Step 2: Add Audio ───────────────────────────────────────────────────
+        for i, entry in enumerate(self.video_entries):
+            basename = os.path.basename(entry.file)
+            if search_query and search_query not in basename.lower():
+                continue
+
+            try:
+                size_str = self._format_size(os.path.getsize(entry.file))
+            except:
+                size_str = "Unknown"
+
+            si = max(0, min(entry.selected_idx, len(entry.streams) - 1)) if entry.streams else 0
+            stream_disp = entry.streams[si].display() if entry.streams else "—"
+
+            self.extract_tree.insert('', tk.END, iid=str(i),
+                values=(i + 1, basename, size_str, stream_disp, entry.probe_status))
+
+        self._update_extract_ready_count()
+
     def _build_add_audio_panel(self) -> tk.Frame:
         frame = ttk.Frame(self.content_area)
 
         header = ttk.Frame(frame)
         header.pack(fill=tk.X, pady=(0, 6))
-        ttk.Button(header, text="← Back", command=self._show_home).pack(side=tk.LEFT, padx=2)
-        ttk.Label(header, text="Step 2: Add Audio to Videos",
-                  font=('', 11, 'bold')).pack(side=tk.LEFT, padx=10)
+        ttk.Label(header, text="Merge Audio",
+                  font=('', 16, 'bold')).pack(side=tk.LEFT, padx=2)
+        fg_muted = self.theme_manager.get_color('fg_secondary') if self.theme_manager else '#666'
+        ttk.Label(header, text="Add an external audio track to videos. Auto-matches by episode (SxxExx).", foreground=fg_muted).pack(side=tk.LEFT, padx=10)
 
         content = ttk.LabelFrame(frame, text="", padding=8)
         content.pack(fill=tk.BOTH, expand=True)
@@ -909,24 +889,24 @@ class FFmpegAudioManager:
         self.audio_folder_var.trace_add('write', lambda *_: self._auto_match_all())
         self.audio_folder_entry = ttk.Entry(af_row, textvariable=self.audio_folder_var)
         self.audio_folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        self.audio_folder_browse_btn = ttk.Button(af_row, text="Browse...",
+        self.audio_folder_browse_btn = ttk.Button(af_row, text="Browse...", width=10,
                    command=self._browse_audio_folder)
         self.audio_folder_browse_btn.pack(side=tk.LEFT)
 
         # Toolbar
         tb = ttk.Frame(content)
         tb.pack(fill=tk.X, pady=(0, 8))
-        self.add_videos_btn = ttk.Button(tb, text="+ Add Videos",
+        self.add_videos_btn = ttk.Button(tb, text="+ Add Videos", width=14,
                    command=self._add_videos_step2)
         self.add_videos_btn.pack(side=tk.LEFT, padx=3)
-        self.add_folder_btn = ttk.Button(tb, text="+ Add Video Folder",
+        self.add_folder_btn = ttk.Button(tb, text="+ Add Video Folder", width=16,
                    command=self._add_folder_step2)
         self.add_folder_btn.pack(side=tk.LEFT, padx=3)
         ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
-        self.remove_selected_btn = ttk.Button(tb, text="Remove Selected",
+        self.remove_selected_btn = ttk.Button(tb, text="Remove Selected", width=16,
                    command=self._remove_selected_step2)
         self.remove_selected_btn.pack(side=tk.LEFT, padx=3)
-        self.clear_all_btn = ttk.Button(tb, text="Clear All",
+        self.clear_all_btn = ttk.Button(tb, text="Clear All", width=12,
                    command=self._clear_add_videos)
         self.clear_all_btn.pack(side=tk.LEFT, padx=3)
 
@@ -943,7 +923,8 @@ class FFmpegAudioManager:
         self.add_tree.column('#',          width=36,  stretch=False, anchor='center')
         self.add_tree.column('Video File', width=280, stretch=True)
         self.add_tree.column(cols[2],      width=340, stretch=True)
-        self.add_tree.tag_configure('no_audio', foreground='#999999')
+        fg_muted = self.theme_manager.get_color('fg_muted') if self.theme_manager else '#999999'
+        self.add_tree.tag_configure('no_audio', foreground=fg_muted)
 
         vsb = ttk.Scrollbar(tf, orient=tk.VERTICAL,   command=self.add_tree.yview)
         hsb = ttk.Scrollbar(tf, orient=tk.HORIZONTAL, command=self.add_tree.xview)
@@ -955,10 +936,11 @@ class FFmpegAudioManager:
         self.add_tree.bind('<Double-ButtonRelease-1>', self._on_add_tree_pick)
         self.add_tree.bind('<ButtonRelease-1>',        self._on_add_tree_single_click)
 
+        fg_sec = self.theme_manager.get_color('fg_secondary') if self.theme_manager else '#666'
         ttk.Label(content,
                   text="Audio files are matched automatically by episode (SxxExx). "
                        "Double-click a row or click the Audio cell to override manually.",
-                  foreground='#666', wraplength=560).pack(anchor='w', pady=(2, 0))
+                  foreground=fg_sec, wraplength=560).pack(anchor='w', pady=(2, 0))
 
         # GPU Hardware Acceleration
         gpu_frame = ttk.LabelFrame(content, text="GPU Hardware Acceleration", padding=4)
@@ -1000,7 +982,7 @@ class FFmpegAudioManager:
             self._toggle_gpu_controls()
         else:
             ttk.Label(gpu_frame, text="No GPU encoders detected on this system.",
-                      foreground='#666').pack(anchor='w', padx=4, pady=2)
+                      foreground=fg_sec).pack(anchor='w', padx=4, pady=2)
 
         # Merge Tool
         tool_frame = ttk.LabelFrame(content, text="Merge Tool", padding=4)
@@ -1039,7 +1021,7 @@ class FFmpegAudioManager:
                                                    width=4)
             self.batch_parallel_spin.pack(side=tk.LEFT, padx=4)
             ttk.Label(par_frame, text=f"(system: {self.batch_processor.max_parallel} cores)",
-                     foreground='#666').pack(side=tk.LEFT)
+                     foreground=fg_sec).pack(side=tk.LEFT)
 
             # Batch Progress Display (initially hidden)
             self.batch_progress_frame = ttk.LabelFrame(batch_frame, text="Progress", padding=4)
@@ -1071,14 +1053,12 @@ class FFmpegAudioManager:
         self.add_out_var = tk.StringVar()
         self.add_out_entry = ttk.Entry(bot, textvariable=self.add_out_var)
         self.add_out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        self.add_out_browse_btn = ttk.Button(bot, text="Browse...",
+        self.add_out_browse_btn = ttk.Button(bot, text="Browse...", width=10,
                    command=lambda: self._browse_folder(self.add_out_var))
         self.add_out_browse_btn.pack(side=tk.LEFT)
-        self.add_audio_btn = tk.Button(bot, text="  Start Mixing  ",
-                                       command=self._on_add_audio_clicked,
-                                       bg='#27ae60', fg='white',
-                                       activebackground='#229954', activeforeground='white',
-                                       relief=tk.RAISED, padx=16, pady=2)
+        self.add_audio_btn = ttk.Button(bot, text="Start Mixing", width=16,
+                                       style='Accent.TButton',
+                                       command=self._on_add_audio_clicked)
         self.add_audio_btn.pack(side=tk.RIGHT, padx=(8, 0), ipady=4)
         return frame
 
@@ -1227,10 +1207,12 @@ class FFmpegAudioManager:
         row.pack(fill=tk.X, pady=(0, 4))
         self.progress_label = ttk.Label(row, text="Idle", anchor='w')
         self.progress_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.cancel_btn = tk.Button(row, text="  Stop  ", command=self._on_cancel,
-                                    state=tk.DISABLED, bg='#c0392b', fg='white',
-                                    activebackground='#a93226', activeforeground='white',
-                                    relief=tk.RAISED, padx=12, pady=2)
+
+        self.btn_toggle_log = ttk.Button(row, text="Show Log", width=10, command=self._toggle_log_drawer)
+        self.btn_toggle_log.pack(side=tk.RIGHT, padx=4)
+
+        self.cancel_btn = ttk.Button(row, text="Stop", width=10, command=self._on_cancel,
+                                    state=tk.DISABLED, style='Danger.TButton')
         self.cancel_btn.pack(side=tk.RIGHT, padx=(6, 0))
 
         ttk.Label(frame, text="Current File:", font=('', 9)).pack(anchor='w', padx=2)
@@ -1326,6 +1308,8 @@ class FFmpegAudioManager:
 
             # Start batch processing thread
             self.batch_active = True
+            if not self.log_drawer_visible:
+                self._toggle_log_drawer()
             self.batch_thread = threading.Thread(
                 target=self._run_batch_processor,
                 args=(out_dir, tool_choice, sync_choices),
@@ -1426,8 +1410,8 @@ class FFmpegAudioManager:
 
         btn_frame = ttk.Frame(dialog)
         btn_frame.pack(pady=15)
-        ttk.Button(btn_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="OK", width=10, command=on_ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", width=10, command=on_cancel).pack(side=tk.LEFT, padx=5)
 
         dialog.transient(self.root)
         dialog.grab_set()
@@ -1522,8 +1506,8 @@ class FFmpegAudioManager:
 
         btn_frame = ttk.Frame(dialog)
         btn_frame.pack(pady=15)
-        ttk.Button(btn_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="OK", width=10, command=on_ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", width=10, command=on_cancel).pack(side=tk.LEFT, padx=5)
 
         dialog.transient(self.root)
         dialog.grab_set()
@@ -1593,8 +1577,35 @@ class FFmpegAudioManager:
         if hasattr(self, 'log_text'):
             self.log_text.configure(bg=bg, fg=fg)
 
-        # Rebuild home panel to update button text
-        self.home_frame = self._build_home_panel()
+        # Sidebar needs color refresh
+        bg_color = self.theme_manager.get_color('bg_secondary')
+        fg_secondary = self.theme_manager.get_color('fg_secondary')
+        fg_primary = self.theme_manager.get_color('fg_primary')
+        try:
+            self.sidebar.config(bg=bg_color)
+            for child in self.sidebar.winfo_children():
+                try:
+                    child.config(bg=bg_color)
+                    if isinstance(child, tk.Label):
+                        child.config(fg=fg_secondary)
+
+                    # Also update children of frames in the sidebar (like status_frame)
+                    if isinstance(child, tk.Frame):
+                        for subchild in child.winfo_children():
+                            try:
+                                subchild.config(bg=bg_color)
+                                if isinstance(subchild, tk.Frame):
+                                    for subsubchild in subchild.winfo_children():
+                                        subsubchild.config(bg=bg_color)
+                                        if isinstance(subsubchild, tk.Label):
+                                            if subsubchild.cget('text') != "●":
+                                                subsubchild.config(fg=fg_primary)
+                            except tk.TclError:
+                                pass
+                except tk.TclError:
+                    pass
+        except Exception:
+            pass
 
     def _on_cancel(self):
         self.cancel_flag.set()
@@ -2075,6 +2086,18 @@ class FFmpegAudioManager:
     def _start_task(self, fn):
         self.cancel_flag.clear()
         self._task_start_time = time.time()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
+        if not self.log_drawer_visible:
+            self._toggle_log_drawer()
         self._set_running(True)
         self.progress_queue.put(('reset',))
         threading.Thread(target=fn, daemon=True).start()
