@@ -1,0 +1,60 @@
+:root {
+  /* Dark Mode (default) */
+  --bg-0: #0f0f0f;
+  --bg-1: #1a1a1a;
+  --bg-2: #2d2d2d;
+  --bg-3: #404040;
+  --fg-0: #ffffff;
+  --fg-1: #d0d0d0;
+  --fg-2: #909090;
+  --line: #404040;
+  --accent: #00d9ff;
+  --accent-2: #0099cc;
+  --ok: #00cc66;
+  --warn: #ffaa00;
+  --err: #ff3333;
+
+  /* Typography */
+  --title-size: 24px;
+  --title-weight: 600;
+  --section-size: 15px;
+  --section-weight: 600;
+  --body-size: 13px;
+  --body-weight: 400;
+  --mono-size: 12px;
+  --mono-weight: 400;
+  --line-height: 1.5;
+
+  /* Spacing (4pt grid) */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 999px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Light Mode */
+    --bg-0: #ffffff;
+    --bg-1: #f5f5f5;
+    --bg-2: #e8e8e8;
+    --bg-3: #d0d0d0;
+    --fg-0: #0f0f0f;
+    --fg-1: #404040;
+    --fg-2: #909090;
+    --line: #d0d0d0;
+    --accent: #0099cc;
+    --accent-2: #00d9ff;
+    --ok: #009933;
+    --warn: #ff8800;
+    --err: #cc0000;
+  }
+}

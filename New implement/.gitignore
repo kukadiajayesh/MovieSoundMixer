@@ -1,0 +1,20 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+.idea/
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+modules/__pycache__/
+
+node_modules/
