@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FFmpeg Audio Manager</title>
+  <link rel="stylesheet" href="styles/design-system.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/screens.css">
+</head>
+<body>
+  <div id="app" class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-header-text">WORKSPACE</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item nav-item--active" data-screen="extract">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M8 2v10M3 10l5 3 5-3"/>
+          </svg>
+          <span>Extract</span>
+        </button>
+        <button class="nav-item" data-screen="merge">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 6l5-3 5 3M3 10l5 3 5-3"/>
+          </svg>
+          <span>Merge</span>
+        </button>
+        <button class="nav-item" data-screen="history">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="6"/>
+            <path d="M8 4v4l3 2"/>
+          </svg>
+          <span>History</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-row">
+          <span class="status-dot status-dot--ok"></span>
+          <span class="status-label">FFmpeg</span>
+        </div>
+        <div class="status-row">
+          <span class="status-dot status-dot--ok"></span>
+          <span class="status-label">mkvmerge</span>
+        </div>
+        <div class="status-row">
+          <span class="status-dot status-dot--ok"></span>
+          <span class="status-label">6 GPU</span>
+        </div>
+        <div class="theme-toggle">
+          <button class="theme-btn" id="theme-toggle" title="Toggle theme">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
+          <span class="theme-label">Theme</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <div class="content-area">
+      <!-- Screen container -->
+      <div id="screen-container" class="screen-container">
+        <!-- Extract Audio Screen -->
+        <div id="screen-extract" class="screen screen--active">
+          <div class="page-header">
+            <div class="page-header-title">
+              <h1 class="page-title">Extract Audio</h1>
+              <p class="page-subtitle">Probe video files, pick a stream, save audio.</p>
+            </div>
+            <div class="page-header-actions">
+              <button class="icon-button" title="Search (⌘K)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+              </button>
+              <button class="icon-button" title="More options">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"></circle>
+                  <circle cx="19" cy="12" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="page-toolbar">
+            <div class="toolbar-group">
+              <button class="button button--ghost button--sm">
+                <span class="button-icon">⊕</span>
+                <span>Add files</span>
+              </button>
+              <button class="button button--ghost button--sm">
+                <span class="button-icon">⊕</span>
+                <span>Folder</span>
+              </button>
+            </div>
+            <div class="toolbar-divider"></div>
+            <div class="toolbar-group">
+              <div class="search-field">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input type="text" placeholder="Search 1 file…" class="search-input">
+              </div>
+              <button class="button button--ghost button--sm" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 4 21 4 23 6 23 20 1 20 1 6"></polyline>
+                  <path d="M10 9v6M14 9v6"></path>
+                </svg>
+                <span>Remove</span>
+              </button>
+              <button class="button button--ghost button--sm">
+                <span>Clear</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="file-table">
+            <div class="table-header">
+              <div class="table-header-cell table-header-cell--checkbox">
+                <input type="checkbox" class="table-checkbox-header">
+              </div>
+              <div class="table-header-cell table-header-cell--file">FILE</div>
+              <div class="table-header-cell table-header-cell--size">SIZE</div>
+              <div class="table-header-cell table-header-cell--stream">STREAM</div>
+              <div class="table-header-cell table-header-cell--status">STATUS</div>
+            </div>
+            <div class="table-body">
+              <div class="table-row">
+                <div class="table-cell table-cell--checkbox">
+                  <input type="checkbox" class="table-checkbox">
+                </div>
+                <div class="table-cell table-cell--file">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                  </svg>
+                  <span class="file-name">Ikkis (2026) Hindi 1080p WEBRip…mkv</span>
+                </div>
+                <div class="table-cell table-cell--size"><span class="mono-text">2.6 GB</span></div>
+                <div class="table-cell table-cell--stream">
+                  <button class="stream-selector">
+                    <span class="stream-label">a:0 · EAC3 · 6ch · RUS</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                </div>
+                <div class="table-cell table-cell--status">
+                  <span class="status-dot status-dot--ok"></span>
+                  <span style="font-size: 13px;">Ready</span>
+                </div>
+              </div>
+            </div>
+            <div class="table-footer">
+              <span class="mono-text" style="color: var(--fg-1);">1 of 1 ready · 2.6 GB total</span>
+            </div>
+          </div>
+
+          <div class="output-section">
+            <div class="output-row">
+              <label class="output-label">Output</label>
+              <input type="text" class="input input--mono" value="/Users/.../Audio">
+              <button class="button button--ghost button--sm">Browse</button>
+              <button class="icon-button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="13 3 23 3 23 13"></polyline>
+                  <line x1="23" y1="3" x2="13" y2="13"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="format-row">
+              <label class="output-label">Format</label>
+              <div class="pill-group">
+                <button class="pill">MP3</button>
+                <button class="pill">AAC</button>
+                <button class="pill">FLAC</button>
+                <button class="pill pill--active">Copy</button>
+              </div>
+            </div>
+          </div>
+
+          <button class="button button--primary button--lg button--cta">
+            <span class="button-icon">▸</span>
+            <span>Extract audio</span>
+          </button>
+        </div>
+
+        <!-- Merge Audio Screen -->
+        <div id="screen-merge" class="screen">
+          <div class="page-header">
+            <div class="page-header-title">
+              <h1 class="page-title">Merge Audio</h1>
+              <p class="page-subtitle">Attach an external audio track to videos.</p>
+            </div>
+            <div class="page-header-actions">
+              <button class="icon-button" title="Search (⌘K)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+              </button>
+              <button class="icon-button" title="More options">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"></circle>
+                  <circle cx="19" cy="12" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="audio-source-card">
+            <div class="card-label">AUDIO SOURCE</div>
+            <div class="audio-source-content">
+              <div class="audio-source-row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span class="audio-path">/Volumes/Drobo/Audio/Hindi</span>
+                <span class="file-count-pill">12 files</span>
+                <button class="button button--ghost button--sm">Change</button>
+              </div>
+              <div class="audio-source-matches">
+                <span class="status-dot status-dot--ok"></span>
+                <span>S01E01..S01E12 detected · Hindi · EAC3</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="page-toolbar">
+            <div class="toolbar-group">
+              <button class="button button--ghost button--sm">
+                <span class="button-icon">⊕</span>
+                <span>Add videos</span>
+              </button>
+              <button class="button button--ghost button--sm">
+                <span class="button-icon">⊕</span>
+                <span>Add video folder</span>
+              </button>
+            </div>
+            <div class="toolbar-divider"></div>
+            <div class="toolbar-group">
+              <div class="search-field">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input type="text" placeholder="Search" class="search-input">
+              </div>
+              <button class="button button--ghost button--sm" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 4 21 4 23 6 23 20 1 20 1 6"></polyline>
+                  <path d="M10 9v6M14 9v6"></path>
+                </svg>
+              </button>
+              <button class="button button--ghost button--sm">Clear all</button>
+            </div>
+          </div>
+
+          <div class="merge-table">
+            <div class="table-header">
+              <div class="table-header-cell table-header-cell--index">#</div>
+              <div class="table-header-cell table-header-cell--video">VIDEO</div>
+              <div class="table-header-cell table-header-cell--ep">EP</div>
+              <div class="table-header-cell table-header-cell--arrow"></div>
+              <div class="table-header-cell table-header-cell--audio">AUDIO</div>
+              <div class="table-header-cell table-header-cell--match">MATCH</div>
+            </div>
+            <div class="table-body">
+              <div class="table-row">
+                <div class="table-cell table-cell--index"><span class="mono-text" style="color: var(--fg-2);">1</span></div>
+                <div class="table-cell table-cell--video"><span class="file-name" style="gap: 0;">Ikkis (2026) Hindi 1080p…mkv</span></div>
+                <div class="table-cell table-cell--ep">
+                  <span class="ep-pill">S01E01</span>
+                </div>
+                <div class="table-cell table-cell--arrow"><span style="color: var(--fg-2); font-size: 13px;">→</span></div>
+                <div class="table-cell table-cell--audio"><span class="file-name" style="gap: 0;">In.Your.Dreams.…mkv</span></div>
+                <div class="table-cell table-cell--match">
+                  <span class="status-dot status-dot--ok"></span>
+                  <span class="match-label" style="font-size: 13px;">Exact</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="merge-footer">
+            <div class="output-row">
+              <label class="output-label">Output</label>
+              <select class="input">
+                <option>Same as video</option>
+                <option>Audio source folder</option>
+                <option>Choose…</option>
+              </select>
+              <button class="button button--ghost button--sm">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"></circle>
+                  <circle cx="19" cy="12" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                </svg>
+                <span>Options</span>
+              </button>
+            </div>
+          </div>
+
+          <button class="button button--primary button--lg button--cta">
+            <span class="button-icon">⤴</span>
+            <span>Merge 1 file</span>
+          </button>
+        </div>
+
+        <!-- History Screen -->
+        <div id="screen-history" class="screen">
+          <div class="page-header">
+            <div class="page-header-title">
+              <h1 class="page-title">History</h1>
+              <p class="page-subtitle">Every job, with logs and re-run.</p>
+            </div>
+            <div class="page-header-actions">
+              <button class="icon-button" title="Search (⌘K)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+              </button>
+              <button class="icon-button" title="More options">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"></circle>
+                  <circle cx="19" cy="12" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="page-toolbar">
+            <div class="toolbar-group">
+              <select class="input input--sm">
+                <option>All</option>
+                <option>This week</option>
+              </select>
+              <select class="input input--sm">
+                <option>This week</option>
+                <option>This month</option>
+              </select>
+            </div>
+            <div class="toolbar-divider"></div>
+            <div class="toolbar-group">
+              <div class="search-field">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input type="text" placeholder="Search jobs…" class="search-input">
+              </div>
+              <button class="button button--ghost button--sm">Export…</button>
+              <button class="button button--ghost button--sm">Clear</button>
+            </div>
+          </div>
+
+          <div class="history-table">
+            <div class="table-header">
+              <div class="table-header-cell table-header-cell--when">WHEN</div>
+              <div class="table-header-cell table-header-cell--job">JOB</div>
+              <div class="table-header-cell table-header-cell--items">ITEMS</div>
+              <div class="table-header-cell table-header-cell--duration">DURATION</div>
+              <div class="table-header-cell table-header-cell--output">OUTPUT</div>
+            </div>
+            <div class="table-body">
+              <div class="table-row">
+                <div class="table-cell table-cell--when" style="font-size: 13px; color: var(--fg-1);">Today 14:22</div>
+                <div class="table-cell table-cell--job" style="gap: var(--space-md); color: var(--fg-0);">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 2v10M3 10l5 3 5-3"/>
+                  </svg>
+                  <span style="font-size: 13px;">Extract audio</span>
+                </div>
+                <div class="table-cell table-cell--items" style="font-size: 13px;">1 file</div>
+                <div class="table-cell table-cell--duration"><span class="mono-text" style="color: var(--fg-1);">00:42</span></div>
+                <div class="table-cell table-cell--output" style="gap: var(--space-sm);">
+                  <a href="#" class="output-link" style="font-size: 13px;">/Audio</a>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="13 3 23 3 23 13"></polyline>
+                    <line x1="23" y1="3" x2="13" y2="13"></line>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="history-empty" style="display: none;">
+            <p>Completed jobs will appear here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress Dock -->
+      <div class="progress-dock">
+        <div class="progress-idle">
+          <span class="status-dot status-dot--ok"></span>
+          <span>Idle · ready to extract</span>
+          <button class="icon-button" style="margin-left: auto;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
