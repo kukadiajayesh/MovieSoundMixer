@@ -17,97 +17,83 @@ from typing import Dict, Optional
 class ColorScheme:
     """Color scheme definition for UI."""
     name: str
-    # Background colors
-    bg_primary: str  # Main background
-    bg_secondary: str  # Panel backgrounds
-    bg_tertiary: str  # Input fields
+    # Background colors (bg-0 to bg-3)
+    bg_0: str  # Window background
+    bg_1: str  # Panel / sidebar
+    bg_2: str  # Raised surfaces, table head
+    bg_3: str  # Hover, selected
 
-    # Foreground colors
-    fg_primary: str  # Main text
-    fg_secondary: str  # Secondary text
-    fg_muted: str  # Disabled/muted text
+    # Foreground colors (fg-0 to fg-2)
+    fg_0: str  # Primary text
+    fg_1: str  # Secondary text
+    fg_2: str  # Tertiary, captions
+
+    # Line color
+    line: str  # Borders, dividers
 
     # Accent colors
-    accent_primary: str  # Buttons, highlights
-    accent_success: str  # Success messages
-    accent_error: str  # Error messages
-    accent_warning: str  # Warning messages
+    accent: str  # Primary action
+    accent_2: str  # Pressed state
 
-    # Border colors
-    border_color: str  # Input borders
-    border_light: str  # Light dividers
-
-    # Special
-    selection_bg: str  # Selection highlight
-    selection_fg: str  # Selection text color
+    # Status colors
+    ok: str  # Success / ready
+    warn: str  # Warning / probing
+    err: str  # Error / failed
 
     def to_dict(self) -> Dict[str, str]:
         """Convert to dictionary."""
         return {
             'name': self.name,
-            'bg_primary': self.bg_primary,
-            'bg_secondary': self.bg_secondary,
-            'bg_tertiary': self.bg_tertiary,
-            'fg_primary': self.fg_primary,
-            'fg_secondary': self.fg_secondary,
-            'fg_muted': self.fg_muted,
-            'accent_primary': self.accent_primary,
-            'accent_success': self.accent_success,
-            'accent_error': self.accent_error,
-            'accent_warning': self.accent_warning,
-            'border_color': self.border_color,
-            'border_light': self.border_light,
-            'selection_bg': self.selection_bg,
-            'selection_fg': self.selection_fg,
+            'bg_0': self.bg_0,
+            'bg_1': self.bg_1,
+            'bg_2': self.bg_2,
+            'bg_3': self.bg_3,
+            'fg_0': self.fg_0,
+            'fg_1': self.fg_1,
+            'fg_2': self.fg_2,
+            'line': self.line,
+            'accent': self.accent,
+            'accent_2': self.accent_2,
+            'ok': self.ok,
+            'warn': self.warn,
+            'err': self.err,
         }
 
 
-# Light Mode Theme
+# Light Mode Theme (from design system)
 THEME_LIGHT = ColorScheme(
     name='light',
-    # Backgrounds
-    bg_primary='#fbfbfe',
-    bg_secondary='#f3f4f8',
-    bg_tertiary='#e8e9ef',
-    # Foreground
-    fg_primary='#1f2126',
-    fg_secondary='#51545d',
-    fg_muted='#a6aab3',
-    # Accents
-    accent_primary='#0084c8',
-    accent_success='#27ae60',
-    accent_error='#c0392b',
-    accent_warning='#d68910',
-    # Borders
-    border_color='#d4d6de',
-    border_light='#e4e5eb',
-    # Selection
-    selection_bg='#0084c8',
-    selection_fg='#ffffff',
+    bg_0='#F7F7F5',
+    bg_1='#FFFFFF',
+    bg_2='#F1F1EE',
+    bg_3='#E7E7E3',
+    line='#DFDFD9',
+    fg_0='#16181C',
+    fg_1='#4B5363',
+    fg_2='#8A93A4',
+    accent='#2563EB',
+    accent_2='#1E4FCB',
+    ok='#34D399',
+    warn='#F5B544',
+    err='#F26D6D',
 )
 
-# Dark Mode Theme
+# Dark Mode Theme (from design system)
 THEME_DARK = ColorScheme(
     name='dark',
-    # Backgrounds
-    bg_primary='#1c1d22',
-    bg_secondary='#232429',
-    bg_tertiary='#2b2d34',
-    # Foreground
-    fg_primary='#eef0f5',
-    fg_secondary='#bdc0c6',
-    fg_muted='#656870',
-    # Accents
-    accent_primary='#0084c8',
-    accent_success='#27ae60',
-    accent_error='#c0392b',
-    accent_warning='#d68910',
-    # Borders
-    border_color='#373a43',
-    border_light='#2e3037',
-    # Selection
-    selection_bg='#0084c8',
-    selection_fg='#ffffff',
+    bg_0='#0E1014',
+    bg_1='#14171D',
+    bg_2='#1B1F27',
+    bg_3='#232833',
+    line='#262C36',
+    fg_0='#E8EAEE',
+    fg_1='#A6ADBB',
+    fg_2='#6B7280',
+    accent='#4F8CFF',
+    accent_2='#1F66E0',
+    ok='#34D399',
+    warn='#F5B544',
+    err='#F26D6D',
 )
 
 
@@ -129,13 +115,44 @@ class UIThemeManager:
         self.current_theme = THEME_LIGHT
         self.dark_mode = False
 
-        # Font sizes (for typography improvements)
+        # Typography (from design system)
         self.font_sizes = {
-            'title': 20,  # Large titles
-            'heading': 14,  # Section headings
-            'body': 10,  # Normal text
-            'small': 9,  # Small text
-            'mono': 10,  # Monospace/code
+            'page_title': 24,  # Page heading, weight 600
+            'section': 15,  # Section label, uppercase, weight 600
+            'body': 13,  # UI labels, normal text
+            'small': 11,  # Smaller text
+            'mono': 12,  # Monospace (paths, streams)
+            'mono_small': 11,  # Monospace for log
+        }
+
+        # Spacing grid (4pt base)
+        self.spacing = {
+            'xs': 4,
+            'sm': 8,
+            'md': 12,
+            'lg': 16,
+            'xl': 20,
+            'xxl': 24,
+            'xxxl': 32,
+        }
+
+        # Border radius
+        self.radius = {
+            'sm': 6,  # Controls
+            'md': 10,  # Panels
+            'lg': 999,  # Pills
+        }
+
+        # Component heights
+        self.heights = {
+            'button_sm': 28,
+            'button_md': 36,
+            'button_lg': 44,
+            'input_sm': 32,
+            'input_md': 36,
+            'table_header': 36,
+            'table_row': 44,
+            'status_dot': 8,
         }
 
         self.load_config()
@@ -190,7 +207,19 @@ class UIThemeManager:
 
     def get_font_size(self, size_key: str) -> int:
         """Get font size by key."""
-        return self.font_sizes.get(size_key, 10)
+        return self.font_sizes.get(size_key, 13)
+
+    def get_spacing(self, key: str) -> int:
+        """Get spacing value by key."""
+        return self.spacing.get(key, 8)
+
+    def get_radius(self, key: str) -> int:
+        """Get border radius by key."""
+        return self.radius.get(key, 6)
+
+    def get_height(self, key: str) -> int:
+        """Get component height by key."""
+        return self.heights.get(key, 36)
 
     def configure_ttk_style(self, style):
         """
@@ -201,124 +230,127 @@ class UIThemeManager:
         """
         theme = self.current_theme
 
-        # Configure general styles
         style.theme_use('clam')
 
-        # Configure TLabel
+        # Base styles using bg_0
         style.configure('TLabel',
-                       background=theme.bg_primary,
-                       foreground=theme.fg_primary)
+                       background=theme.bg_0,
+                       foreground=theme.fg_0)
 
-        # Configure TFrame
         style.configure('TFrame',
-                       background=theme.bg_primary)
+                       background=theme.bg_0)
 
-        # Configure TButton
+        # Ghost Button (secondary)
         style.configure('TButton',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       bordercolor=theme.border_color,
-                       lightcolor=theme.bg_secondary,
-                       darkcolor=theme.bg_secondary,
-                       borderwidth=0, relief='flat', padding=6)
+                       background=theme.bg_2,
+                       foreground=theme.fg_0,
+                       bordercolor=theme.line,
+                       lightcolor=theme.bg_2,
+                       darkcolor=theme.bg_2,
+                       borderwidth=1, relief='flat', padding=8)
         style.map('TButton',
-                 background=[('active', theme.bg_tertiary), ('pressed', theme.bg_tertiary)])
+                 background=[('active', theme.bg_3), ('pressed', theme.bg_3), ('disabled', theme.bg_2)],
+                 foreground=[('disabled', theme.fg_2)])
 
-        # Configure Accent.TButton
+        # Primary Button (accent)
         style.configure('Accent.TButton',
-                       background=theme.accent_primary,
-                       foreground='#ffffff',
+                       background=theme.accent,
+                       foreground='#FFFFFF',
                        borderwidth=0, relief='flat',
-                       padding=6)
+                       padding=8)
         style.map('Accent.TButton',
-                 background=[('active', theme.accent_primary)])
+                 background=[('active', theme.accent_2), ('pressed', theme.accent_2), ('disabled', theme.bg_2)],
+                 foreground=[('disabled', theme.fg_2)])
 
-        # Configure Danger.TButton
+        # Danger Button
         style.configure('Danger.TButton',
-                       background=theme.accent_error,
-                       foreground='#ffffff',
-                       borderwidth=0, relief='flat',
-                       padding=6)
+                       background='transparent',
+                       foreground=theme.err,
+                       bordercolor=f'{theme.err}66',  # 40% alpha
+                       lightcolor='transparent',
+                       darkcolor='transparent',
+                       borderwidth=1, relief='flat',
+                       padding=8)
         style.map('Danger.TButton',
-                 background=[('active', theme.accent_error), ('disabled', theme.bg_secondary)])
+                 background=[('active', f'{theme.err}1a'), ('pressed', f'{theme.err}33'), ('disabled', theme.bg_2)],
+                 foreground=[('disabled', theme.fg_2)])
 
-        # Configure TEntry
+        # Input fields
         style.configure('TEntry',
-                       fieldbackground=theme.bg_secondary,
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       bordercolor=theme.border_color,
-                       lightcolor=theme.border_color,
-                       darkcolor=theme.border_color,
-                       borderwidth=0, relief='flat', padding=6)
+                       fieldbackground=theme.bg_2,
+                       background=theme.bg_2,
+                       foreground=theme.fg_0,
+                       bordercolor=theme.line,
+                       lightcolor=theme.line,
+                       darkcolor=theme.line,
+                       borderwidth=1, relief='flat', padding=6)
 
-        # Configure TCombobox
         style.configure('TCombobox',
-                       fieldbackground=theme.bg_secondary,
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       bordercolor=theme.border_color,
-                       arrowcolor=theme.fg_secondary)
+                       fieldbackground=theme.bg_2,
+                       background=theme.bg_2,
+                       foreground=theme.fg_0,
+                       bordercolor=theme.line,
+                       arrowcolor=theme.fg_1)
 
-        # Configure TTreeview
+        # Table (Treeview)
         style.configure('Treeview',
-                       background=theme.bg_primary,
-                       foreground=theme.fg_primary,
-                       fieldbackground=theme.bg_primary,
-                       bordercolor=theme.border_color,
-                       borderwidth=0, relief='flat', padding=6)
+                       background=theme.bg_1,
+                       foreground=theme.fg_0,
+                       fieldbackground=theme.bg_1,
+                       bordercolor=theme.line,
+                       borderwidth=1, relief='flat')
         style.map('Treeview',
-                 background=[('selected', theme.selection_bg)],
-                 foreground=[('selected', theme.selection_fg)])
+                 background=[('selected', theme.bg_3)],
+                 foreground=[('selected', theme.fg_0)])
 
         style.configure('Treeview.Heading',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_secondary,
-                       bordercolor=theme.border_color,
-                       lightcolor=theme.bg_secondary,
-                       darkcolor=theme.bg_secondary,
-                       font=('', 9, 'bold'))
+                       background=theme.bg_2,
+                       foreground=theme.fg_2,
+                       bordercolor=theme.line,
+                       lightcolor=theme.bg_2,
+                       darkcolor=theme.bg_2,
+                       font=('', 11, 'bold'))
 
-        # Configure TLabelFrame
+        # Labelframe
         style.configure('TLabelframe',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       bordercolor=theme.border_color,
-                       lightcolor=theme.border_color,
-                       darkcolor=theme.border_color,
-                       borderwidth=0, relief='flat', padding=6)
+                       background=theme.bg_1,
+                       foreground=theme.fg_0,
+                       bordercolor=theme.line,
+                       lightcolor=theme.line,
+                       darkcolor=theme.line,
+                       borderwidth=1, relief='flat')
         style.configure('TLabelframe.Label',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       font=('', 10, 'bold'))
+                       background=theme.bg_1,
+                       foreground=theme.fg_0,
+                       font=('', 13, 'bold'))
 
-        # Configure TRadiobutton
-        style.configure('TRadiobutton',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       indicatorcolor=theme.bg_primary)
-        style.map('TRadiobutton',
-                  indicatorcolor=[('selected', theme.accent_primary)])
-
-        # Configure TCheckbutton
+        # Checkbutton
         style.configure('TCheckbutton',
-                       background=theme.bg_secondary,
-                       foreground=theme.fg_primary,
-                       indicatorcolor=theme.bg_primary)
+                       background=theme.bg_0,
+                       foreground=theme.fg_0,
+                       indicatorcolor=theme.bg_2)
         style.map('TCheckbutton',
-                  indicatorcolor=[('selected', theme.accent_primary)])
+                  indicatorcolor=[('selected', theme.accent)])
+
+        # Radiobutton
+        style.configure('TRadiobutton',
+                       background=theme.bg_0,
+                       foreground=theme.fg_0,
+                       indicatorcolor=theme.bg_2)
+        style.map('TRadiobutton',
+                  indicatorcolor=[('selected', theme.accent)])
 
         # Progressbar
         style.configure('Horizontal.TProgressbar',
-                        background=theme.accent_primary,
-                        troughcolor=theme.border_color,
-                        bordercolor=theme.border_color,
-                        lightcolor=theme.accent_primary,
-                        darkcolor=theme.accent_primary)
+                        background=theme.accent,
+                        troughcolor=theme.bg_2,
+                        bordercolor=theme.line,
+                        lightcolor=theme.accent,
+                        darkcolor=theme.accent)
 
-        # PanedWindow
-        style.configure('TPanedwindow', background=theme.bg_primary)
-        style.configure('Sash', background=theme.border_color, bordercolor=theme.border_color)
+        # Panedwindow
+        style.configure('TPanedwindow', background=theme.bg_0)
+        style.configure('Sash', background=theme.line, bordercolor=theme.line)
 
 
 class TextColors:

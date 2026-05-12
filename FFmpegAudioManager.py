@@ -482,7 +482,7 @@ class FFmpegAudioManager:
         theme = self.theme_manager.current_theme if self.theme_manager else None
         if theme:
             style.configure('Accent.TButton',
-                          background=theme.accent_primary,
+                          background=theme.accent,
                           foreground='#ffffff',
                           font=('', 10, 'bold'),
                           padding=8,
@@ -499,8 +499,8 @@ class FFmpegAudioManager:
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
 
         # Right side: split into content and bottom log drawer
-        border_color = self.theme_manager.get_color('border_color') if self.theme_manager else '#aaa'
-        bg_primary = self.theme_manager.get_color('bg_primary') if self.theme_manager else '#fff'
+        border_color = self.theme_manager.get_color('line') if self.theme_manager else '#aaa'
+        bg_primary = self.theme_manager.get_color('bg_0') if self.theme_manager else '#fff'
         self.right_pane = tk.PanedWindow(self.main_container, orient=tk.VERTICAL, sashwidth=2, bg=border_color, sashrelief=tk.FLAT, bd=0)
         self.right_pane.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=6, pady=6)
 
@@ -652,86 +652,262 @@ class FFmpegAudioManager:
         return f"{int(s) if s.is_integer() else s} {size_name[i]}"
 
     def _build_extract_panel(self) -> tk.Frame:
-        frame = ttk.Frame(self.content_area)
+        from modules.StyleUtils import Typography, Separator
 
-        # Header
-        header = ttk.Frame(frame)
-        header.pack(fill=tk.X, pady=(0, 10))
+        frame = tk.Frame(self.content_area, bg=self.theme_manager.get_color('bg_0'))
+        frame.pack(fill=tk.BOTH, expand=True)
 
-        title_box = ttk.Frame(header)
-        title_box.pack(side=tk.LEFT, fill=tk.Y)
-        ttk.Label(title_box, text="Extract Audio", font=('', 16, 'bold')).pack(anchor='w', padx=2)
-        fg_muted = self.theme_manager.get_color('fg_secondary') if self.theme_manager else '#666'
-        ttk.Label(title_box, text="Probe video files, pick a stream, save audio as a standalone file.", foreground=fg_muted).pack(anchor='w', padx=2)
+        # Page Header (24px title, 13px subtitle)
+        header_frame = tk.Frame(frame, bg=self.theme_manager.get_color('bg_0'))
+        header_frame.pack(fill=tk.X, padx=16, pady=(16, 0))
 
-        self.extract_clear_btn = ttk.Button(header, text="  Clear  ", command=self._clear_step1)
-        self.extract_clear_btn.pack(side=tk.RIGHT, anchor='n')
+        # Title
+        title = Typography.page_title(header_frame, 'Extract Audio', theme=self.theme_manager)
+        title.pack(anchor='w')
 
-        content = ttk.LabelFrame(frame, text="", padding=8)
-        content.pack(fill=tk.BOTH, expand=True)
+        # Subtitle
+        subtitle = Typography.subtitle(
+            header_frame,
+            'Probe video files, pick a stream, save audio.',
+            theme=self.theme_manager
+        )
+        subtitle.pack(anchor='w', pady=(4, 0))
 
-        # Toolbar
-        tb = ttk.Frame(content)
-        tb.pack(fill=tk.X, pady=(0, 8))
+        # Header separator
+        sep = Separator.horizontal(frame, theme=self.theme_manager)
+        sep.pack(fill=tk.X, pady=(12, 0), padx=0)
 
-        self.extract_add_files_btn = ttk.Button(tb, text="+ Add Files", width=14, command=self._add_files_step1)
-        self.extract_add_files_btn.pack(side=tk.LEFT, padx=3)
-        self.extract_add_folder_btn = ttk.Button(tb, text="+ Add Folder", width=14, command=self._add_folder_step1)
-        self.extract_add_folder_btn.pack(side=tk.LEFT, padx=3)
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
+        # Utility actions (search, overflow menu) - placeholder
+        # Note: These will be icon buttons; for now using simple implementation
 
-        # Search
-        tk.Label(tb, text="🔍", fg=fg_muted).pack(side=tk.LEFT)
+        # Main content area with padding
+        content = tk.Frame(frame, bg=self.theme_manager.get_color('bg_0'))
+        content.pack(fill=tk.BOTH, expand=True, padx=16, pady=(20, 16))
+
+        # Toolbar with two groups: file ops (left) and list ops (right)
+        tb = tk.Frame(content, bg=self.theme_manager.get_color('bg_0'))
+        tb.pack(fill=tk.X, pady=(0, 12))
+
+        # Left group: File operations
+        tb_left = tk.Frame(tb, bg=self.theme_manager.get_color('bg_0'))
+        tb_left.pack(side=tk.LEFT)
+
+        self.extract_add_files_btn = ttk.Button(tb_left, text="⊕ Add files", command=self._add_files_step1)
+        self.extract_add_files_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        self.extract_add_folder_btn = ttk.Button(tb_left, text="⊕ Folder", command=self._add_folder_step1)
+        self.extract_add_folder_btn.pack(side=tk.LEFT, padx=4)
+
+        # Divider
+        divider = Separator.vertical(tb, width=1, theme=self.theme_manager)
+        divider.pack(side=tk.LEFT, fill=tk.Y, padx=(12, 12), pady=2)
+
+        # Right group: Search and list operations
+        tb_right = tk.Frame(tb, bg=self.theme_manager.get_color('bg_0'))
+        tb_right.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Search field (hidden when 0 files)
+        search_frame = tk.Frame(tb_right, bg=self.theme_manager.get_color('bg_0'))
+        search_frame.pack(side=tk.LEFT, padx=(0, 8))
+        tk.Label(search_frame, text='🔍', bg=self.theme_manager.get_color('bg_0')).pack(side=tk.LEFT, padx=(0, 4))
         self.extract_search_var = tk.StringVar()
         self.extract_search_var.trace_add("write", lambda *args: self._rebuild_extract_tree())
-        self.extract_search_entry = ttk.Entry(tb, textvariable=self.extract_search_var, width=20)
-        self.extract_search_entry.pack(side=tk.LEFT, padx=3)
+        self.extract_search_entry = ttk.Entry(search_frame, textvariable=self.extract_search_var, width=25)
+        self.extract_search_entry.pack(side=tk.LEFT)
 
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=2)
+        # Remove button
+        self.extract_remove_btn = ttk.Button(tb_right, text="⌫ Remove", command=self._remove_selected_step1)
+        self.extract_remove_btn.pack(side=tk.LEFT, padx=4)
 
-        self.extract_remove_btn = ttk.Button(tb, text="Remove Selected", width=16, command=self._remove_selected_step1)
-        self.extract_remove_btn.pack(side=tk.LEFT, padx=3)
+        # Clear button (in toolbar)
+        self.extract_clear_btn = ttk.Button(tb_right, text="Clear", command=self._clear_step1)
+        self.extract_clear_btn.pack(side=tk.LEFT, padx=4)
 
-        self.extract_ready_lbl = ttk.Label(tb, text="0/0 ready", foreground=fg_muted)
-        self.extract_ready_lbl.pack(side=tk.RIGHT, padx=3)
+        # Ready counter on far right
+        self.extract_ready_lbl = tk.Label(
+            tb_right,
+            text="0/0 ready",
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_2'),
+            font=('', 11)
+        )
+        self.extract_ready_lbl.pack(side=tk.RIGHT, padx=(8, 0))
+
+        # Table with styled container
+        table_container = tk.Frame(
+            content,
+            bg=self.theme_manager.get_color('line'),
+            bd=0,
+            highlightthickness=0
+        )
+        table_container.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+
+        # Table frame with 1px border using frame
+        table_inner = tk.Frame(table_container, bg=self.theme_manager.get_color('bg_1'), bd=0)
+        table_inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
         # Treeview
-        cols = ('#', 'File', 'Size', 'Stream', 'Status')
-        tf = ttk.Frame(content)
-        tf.pack(fill=tk.BOTH, expand=True)
+        cols = ('File', 'Size', 'Stream', 'Status')
+        self.extract_tree = ttk.Treeview(
+            table_inner,
+            columns=cols,
+            show='tree headings',
+            height=10,
+            selectmode='extended'
+        )
 
-        self.extract_tree = ttk.Treeview(tf, columns=cols, show='headings', height=5, selectmode='extended')
-        self.extract_tree.heading('#', text='#')
-        self.extract_tree.heading('File', text='File')
-        self.extract_tree.heading('Size', text='Size')
-        self.extract_tree.heading('Stream', text='Stream')
-        self.extract_tree.heading('Status', text='Status')
+        # Configure columns (removed '#' column, using tree column for checkbox area)
+        self.extract_tree.column('#0', width=40, stretch=False)  # For checkbox
+        self.extract_tree.heading('#0', text='')
 
-        self.extract_tree.column('#', width=36, stretch=False, anchor='center')
-        self.extract_tree.column('File', width=260, stretch=True)
-        self.extract_tree.column('Size', width=80, stretch=False, anchor='e')
-        self.extract_tree.column('Stream', width=180, stretch=False)
-        self.extract_tree.column('Status', width=120, stretch=False)
+        self.extract_tree.heading('File', text='FILE')
+        self.extract_tree.heading('Size', text='SIZE')
+        self.extract_tree.heading('Stream', text='STREAM')
+        self.extract_tree.heading('Status', text='STATUS')
 
-        vsb = ttk.Scrollbar(tf, orient=tk.VERTICAL, command=self.extract_tree.yview)
-        hsb = ttk.Scrollbar(tf, orient=tk.HORIZONTAL, command=self.extract_tree.xview)
+        self.extract_tree.column('File', width=400, stretch=True, anchor='w')
+        self.extract_tree.column('Size', width=100, stretch=False, anchor='e')
+        self.extract_tree.column('Stream', width=200, stretch=False, anchor='w')
+        self.extract_tree.column('Status', width=120, stretch=False, anchor='w')
+
+        # Scrollbars (thin overlay style)
+        vsb = ttk.Scrollbar(table_inner, orient=tk.VERTICAL, command=self.extract_tree.yview)
+        hsb = ttk.Scrollbar(table_inner, orient=tk.HORIZONTAL, command=self.extract_tree.xview)
         self.extract_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        self.extract_tree.pack(fill=tk.BOTH, expand=True)
+
+        # Pack table with scrollbars
+        self.extract_tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+
+        table_inner.grid_rowconfigure(0, weight=1)
+        table_inner.grid_columnconfigure(0, weight=1)
+
         self.extract_tree.bind('<ButtonRelease-1>', self._on_extract_tree_click)
 
-        # Bottom Frame
-        bot = ttk.Frame(content)
-        bot.pack(fill=tk.X, pady=(6, 0))
-        ttk.Label(bot, text="Output Folder:", width=15, anchor='w').pack(side=tk.LEFT)
+        # Output folder row
+        output_frame = tk.Frame(content, bg=self.theme_manager.get_color('bg_0'))
+        output_frame.pack(fill=tk.X, pady=(0, 12))
+
+        output_label = tk.Label(
+            output_frame,
+            text='Output',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_1'),
+            font=('', 12),
+            width=10,
+            anchor='w'
+        )
+        output_label.pack(side=tk.LEFT)
+
         self.extract_out_var = tk.StringVar()
-        self.extract_out_entry = ttk.Entry(bot, textvariable=self.extract_out_var)
-        self.extract_out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        self.extract_out_browse_btn = ttk.Button(bot, text="Browse...", width=10, command=lambda: self._browse_folder(self.extract_out_var))
+        self.extract_out_entry = ttk.Entry(output_frame, textvariable=self.extract_out_var)
+        self.extract_out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+
+        self.extract_out_browse_btn = ttk.Button(
+            output_frame,
+            text='Browse',
+            command=lambda: self._browse_folder(self.extract_out_var)
+        )
         self.extract_out_browse_btn.pack(side=tk.LEFT)
-        self.extract_btn = ttk.Button(bot, text="Extract Audio", width=16, style='Accent.TButton', command=self._on_extract_clicked)
-        self.extract_btn.pack(side=tk.RIGHT, padx=(8, 0), ipady=4)
+
+        # Format row (codec selection)
+        format_frame = tk.Frame(content, bg=self.theme_manager.get_color('bg_0'))
+        format_frame.pack(fill=tk.X, pady=(0, 20))
+
+        format_label = tk.Label(
+            format_frame,
+            text='Format',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_1'),
+            font=('', 12),
+            width=10,
+            anchor='w'
+        )
+        format_label.pack(side=tk.LEFT)
+
+        # Codec selection (radio buttons or pill control)
+        self.extract_format_var = tk.StringVar(value='copy')
+        copy_rb = tk.Radiobutton(
+            format_frame,
+            text='Copy (no re-encode)',
+            variable=self.extract_format_var,
+            value='copy',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_0'),
+            selectcolor=self.theme_manager.get_color('bg_3'),
+            activebackground=self.theme_manager.get_color('bg_0'),
+            activeforeground=self.theme_manager.get_color('fg_0'),
+            bd=0,
+            highlightthickness=0
+        )
+        copy_rb.pack(side=tk.LEFT, padx=(0, 12))
+
+        mp3_rb = tk.Radiobutton(
+            format_frame,
+            text='MP3',
+            variable=self.extract_format_var,
+            value='mp3',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_0'),
+            selectcolor=self.theme_manager.get_color('bg_3'),
+            activebackground=self.theme_manager.get_color('bg_0'),
+            activeforeground=self.theme_manager.get_color('fg_0'),
+            bd=0,
+            highlightthickness=0
+        )
+        mp3_rb.pack(side=tk.LEFT, padx=4)
+
+        aac_rb = tk.Radiobutton(
+            format_frame,
+            text='AAC',
+            variable=self.extract_format_var,
+            value='aac',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_0'),
+            selectcolor=self.theme_manager.get_color('bg_3'),
+            activebackground=self.theme_manager.get_color('bg_0'),
+            activeforeground=self.theme_manager.get_color('fg_0'),
+            bd=0,
+            highlightthickness=0
+        )
+        aac_rb.pack(side=tk.LEFT, padx=4)
+
+        flac_rb = tk.Radiobutton(
+            format_frame,
+            text='FLAC',
+            variable=self.extract_format_var,
+            value='flac',
+            bg=self.theme_manager.get_color('bg_0'),
+            fg=self.theme_manager.get_color('fg_0'),
+            selectcolor=self.theme_manager.get_color('bg_3'),
+            activebackground=self.theme_manager.get_color('bg_0'),
+            activeforeground=self.theme_manager.get_color('fg_0'),
+            bd=0,
+            highlightthickness=0
+        )
+        flac_rb.pack(side=tk.LEFT, padx=4)
+
+        # Primary CTA Button (anchored bottom-right)
+        cta_frame = tk.Frame(content, bg=self.theme_manager.get_color('bg_0'))
+        cta_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(12, 0))
+
+        self.extract_btn = tk.Button(
+            cta_frame,
+            text='▸ Extract audio',
+            bg=self.theme_manager.get_color('accent'),
+            fg='#FFFFFF',
+            activebackground=self.theme_manager.get_color('accent_2'),
+            activeforeground='#FFFFFF',
+            font=('', 13, 'bold'),
+            width=28,
+            height=2,
+            border=0,
+            highlightthickness=0,
+            command=self._on_extract_clicked
+        )
+        self.extract_btn.pack(side=tk.RIGHT)
+
         return frame
 
     def _on_extract_tree_click(self, event):
