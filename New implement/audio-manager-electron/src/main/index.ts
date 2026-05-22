@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
+import { setMainWindow, resumeInterruptedJobs } from './queue/jobQueue'
+import { setupIPCHandlers } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -13,7 +15,16 @@ function createWindow() {
     },
   })
 
-  const isDev = process.env.NODE_ENV === 'development'
+  // Initialize job queue window binding and IPC handlers
+  setMainWindow(mainWindow)
+  setupIPCHandlers(mainWindow)
+
+  // Re-queue any jobs that were interrupted by a previous shutdown.
+  mainWindow.webContents.once('did-finish-load', () => {
+    resumeInterruptedJobs()
+  })
+
+  const isDev = process.env.NODE_ENV?.trim() === 'development' || !app.isPackaged
   const url = isDev ? 'http://localhost:5173' : `file://${path.join(__dirname, '../index.html')}`
 
   mainWindow.loadURL(url)
@@ -27,7 +38,15 @@ function createWindow() {
   })
 }
 
-app.on('ready', createWindow)
+app.on('ready', async () => {
+  try {
+    const { initDatabase } = await import('./db/connection')
+    await initDatabase()
+  } catch (err) {
+    console.error('Failed to initialize SQLite database:', err)
+  }
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
