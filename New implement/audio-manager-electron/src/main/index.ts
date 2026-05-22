@@ -8,14 +8,13 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.ts'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      enableRemoteModule: false,
     },
   })
 
   const isDev = process.env.NODE_ENV === 'development'
-  const url = isDev ? 'http://localhost:5173' : `file://${path.join(__dirname, '../renderer/index.html')}`
+  const url = isDev ? 'http://localhost:5173' : `file://${path.join(__dirname, '../index.html')}`
 
   mainWindow.loadURL(url)
 
