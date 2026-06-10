@@ -585,15 +585,15 @@ Copy this file regularly and update as you progress. Track dates in YYYY-MM-DD f
 - **Deliverable:** Settings screen complete
 
 ### 6.2 Theme Management (4 hours)
-**Assigned:** 
-**Started:** 
-**Completed:** 
+**Assigned:** Developer
+**Started:** 2026-06-10
+**Completed:** 2026-06-10
 
-- [ ] useTheme hook
-- [ ] Theme switcher UI
-- [ ] Apply across app
-- [ ] Persist preference
-- [ ] System preference detection
+- [x] useTheme hook
+- [x] Theme switcher UI (titlebar toggle)
+- [x] Apply across app (data-theme + design tokens)
+- [x] Persist preference (themeStore)
+- [x] System preference detection
 - **Deliverable:** Theme management working
 
 ### 6.3 Auto-Update (6 hours)
@@ -622,15 +622,15 @@ Copy this file regularly and update as you progress. Track dates in YYYY-MM-DD f
 - **Deliverable:** Logging working
 
 ### 6.5 Error Handling (4 hours)
-**Assigned:** 
-**Started:** 
+**Assigned:** Developer
+**Started:** 2026-06-10
 **Completed:** 
 
-- [ ] React error boundary
-- [ ] FFmpeg error handling
-- [ ] Save job state
+- [x] React error boundary (ErrorBoundary.tsx wrapping App)
+- [x] FFmpeg error handling (job-status failed → row error state + log drawer)
+- [x] Save job state (SQLite jobs table + resume on startup)
 - [ ] Auto-recovery
-- [ ] User-friendly messages
+- [x] User-friendly messages (toasts + status cells)
 - **Deliverable:** Error handling robust
 
 ### 6.6 Performance Monitoring (3 hours)
@@ -962,6 +962,23 @@ Corrected over-claims on the board:
 - **All "tests" checkboxes un-checked** — no test runner is configured; automated testing is genuinely Phase 7 scope.
 - **Routing** reworded: it's a state-based page switcher in `App.tsx`, not React Router; "remember last screen" is not implemented.
 - **Settings migration** un-checked (no legacy schema exists yet).
+
+**2026-06-10:** Standalone-design port + backend fixes
+Ported the real UI design from `FFmpeg Audio Manager _Standalone_.html` (extracted to `design_template.html` + `decoded_1.js`) into the Electron renderer:
+- **New `styles/design.css`** — full oklch token system (dark + light + compact density), loaded after global.css; legacy token aliases keep the showcase page working.
+- **App shell rebuilt** to the design grid: draggable titlebar (traffic dots, theme toggle), sidebar with nav counts + dependency status (FFmpeg/mkvmerge/GPU), collapsible bottom log drawer with tagged, timestamped lines.
+- **Extract page**: dropzone (full/slim), search toolbar, ready counter, file table with ext badges + episode tags, inline stream-picker popover, per-row mini progress, sticky run footer with output path + format segmented control. Real drag-drop paths via `webUtils.getPathForFile` (File.path is gone in modern Electron).
+- **Merge page**: batch pairs with SxxExx episode auto-match, match-preview banner, manual audio assignment, settings cards (GPU accel + quality, merge backend radios, container/track mode), run footer.
+- **History page**: recent-item cards with op icon, status tint, search, export, per-item delete.
+- New design components: Icon, Dropzone, RunFooter, LogDrawer, StatusCell, StreamPicker, Switch, Toasts, ErrorBoundary (6.5).
+- Stores reworked: structured logs in jobStore, new mergeStore, per-file progress in fileStore; `useShallow` selector fixes a render loop.
+
+Backend fixes found during the audit:
+- **Merge jobs spawned the wrong binary**: jobQueue picked mkvmerge for *all* merge jobs when installed, even with FFmpeg-style args. Job now carries `binary`, set where args are built (and inferred on resume).
+- **Stream mapping fix**: `start-extraction` used `0:a:${streamIdx-1}` with an absolute stream index; renderer now sends the audio-ordinal and main maps `0:a:N` directly.
+- Added `backend` (auto/mkvmerge/ffmpeg) + `quality` params to `start-merge`; mkvmerge `Progress: NN%` stdout now drives the progress bar; new `get-file-properties` IPC for dialog-picked files.
+
+Verified: `tsc` clean for renderer + main, vite production build OK, app launched and rendered the design (screenshot-checked).
 
 ---
 
