@@ -158,44 +158,59 @@ function runJob(job: Job) {
   const child = spawn(binaryPath, job.args)
   activeProcesses.set(job.id, child)
 
-  child.stdout.on('data', (chunk) => {
-    const line = chunk.toString().trim()
-    if (line && mainWindow) {
-      mainWindow.webContents.send('log-output', { jobId: job.id, message: line })
+  const seenLogs = new Set<string>()
 
-      // mkvmerge reports "Progress: NN%" on stdout.
-      const mkvProgress = line.match(/Progress:\s*(\d{1,3})%/i)
-      if (mkvProgress) {
-        const percent = Math.min(99, parseInt(mkvProgress[1], 10))
-        db.updateJobProgress(job.id, percent).catch(() => {})
-        mainWindow.webContents.send('progress', { jobId: job.id, percent })
+  const emitLog = (message: string) => {
+    if (!mainWindow) return
+    if (seenLogs.has(message)) return
+    seenLogs.add(message)
+    mainWindow.webContents.send('log-output', { jobId: job.id, message })
+  }
+
+  child.stdout.on('data', (chunk) => {
+    const output = chunk.toString()
+    const lines = output.split(/\r|\n/)
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed) {
+        emitLog(trimmed)
+
+        // mkvmerge reports "Progress: NN%" on stdout.
+        const mkvProgress = trimmed.match(/Progress:\s*(\d{1,3})%/i)
+        if (mkvProgress) {
+          const percent = Math.min(99, parseInt(mkvProgress[1], 10))
+          db.updateJobProgress(job.id, percent).catch(() => {})
+          if (mainWindow) {
+            mainWindow.webContents.send('progress', { jobId: job.id, percent })
+          }
+        }
       }
     }
   })
 
   child.stderr.on('data', (chunk) => {
     const output = chunk.toString()
-    if (mainWindow) {
-      const lines = output.split('\n')
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (trimmed) {
-          mainWindow.webContents.send('log-output', { jobId: job.id, message: trimmed })
-        }
+    const lines = output.split(/\r|\n/)
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed) {
+        emitLog(trimmed)
       }
+    }
 
-      // Progress mapping from FFmpeg's "time=HH:MM:SS.cc" output.
-      const timeRegex = /time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/i
-      const match = output.match(timeRegex)
-      if (match && job.duration > 0) {
-        const hours = parseInt(match[1], 10)
-        const minutes = parseInt(match[2], 10)
-        const seconds = parseInt(match[3], 10)
-        const centiseconds = parseInt(match[4], 10)
-        const elapsed = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
+    // Progress mapping from FFmpeg's "time=HH:MM:SS.cc" output.
+    const timeRegex = /time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/i
+    const match = output.match(timeRegex)
+    if (match && job.duration > 0) {
+      const hours = parseInt(match[1], 10)
+      const minutes = parseInt(match[2], 10)
+      const seconds = parseInt(match[3], 10)
+      const centiseconds = parseInt(match[4], 10)
+      const elapsed = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
 
-        const percent = Math.min(99, Math.round((elapsed / job.duration) * 100))
-        db.updateJobProgress(job.id, percent).catch(() => {})
+      const percent = Math.min(99, Math.round((elapsed / job.duration) * 100))
+      db.updateJobProgress(job.id, percent).catch(() => {})
+      if (mainWindow) {
         mainWindow.webContents.send('progress', { jobId: job.id, percent })
       }
     }

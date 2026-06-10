@@ -18,3 +18,5 @@ ENV/
 modules/__pycache__/
 
 node_modules/
+# Added by code-review-graph
+.code-review-graph/
