@@ -13,6 +13,12 @@ import { useToast } from '../components/design/Toasts'
 type Backend = 'auto' | 'mkvmerge' | 'ffmpeg'
 type Quality = 'fast' | 'balanced' | 'quality'
 
+// Video + external-audio extensions the folder importer should pull in.
+const MEDIA_EXTS = [
+  'mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts',
+  'mp3', 'aac', 'flac', 'wav', 'm4a', 'ogg', 'wma', 'eac3', 'ac3', 'dts', 'mka',
+]
+
 const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
 
@@ -45,6 +51,10 @@ export const MergeAudio: React.FC = () => {
   const [quality, setQuality] = useState<Quality>('balanced')
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
   const [assigning, setAssigning] = useState<string | null>(null)
+
+  const cpuCount = navigator.hardwareConcurrency || 4
+  const [batch, setBatch] = useState(false)
+  const [processes, setProcesses] = useState(Math.min(2, cpuCount))
 
   useEffect(() => {
     window.electron?.ipcRenderer
@@ -101,6 +111,25 @@ export const MergeAudio: React.FC = () => {
     }
   }
 
+  const handleAddFolder = async () => {
+    if (!window.electron?.ipcRenderer) {
+      toast({ kind: 'error', title: 'File dialogs require the Electron shell' })
+      return
+    }
+    const res = await window.electron.ipcRenderer.invoke('open-folder-dialog', MEDIA_EXTS)
+    if (!res || res.canceled) return
+    if (res.filePaths.length === 0) {
+      toast({ kind: 'info', title: 'No video or audio files found in that folder' })
+      return
+    }
+    ingest(
+      res.filePaths.map((fp: string) => ({
+        name: fp.substring(fp.lastIndexOf(fp.includes('\\') ? '\\' : '/') + 1),
+        path: fp,
+      })),
+    )
+  }
+
   const handleBrowseOutput = async () => {
     if (!window.electron?.ipcRenderer) return
     const result = await window.electron.ipcRenderer.invoke('browse-folder')
@@ -120,6 +149,11 @@ export const MergeAudio: React.FC = () => {
       toast({ kind: 'error', title: 'Merging requires the Electron shell' })
       return
     }
+
+    // Apply the batch-processing choice to the shared queue for this run.
+    await window.electron.ipcRenderer
+      .invoke('set-concurrency', batch ? processes : 1)
+      .catch(() => {})
 
     useJobStore.getState().startRun(targets.map((p) => ({ id: p.id, name: p.video.name })))
     useJobStore
@@ -195,7 +229,7 @@ export const MergeAudio: React.FC = () => {
           sub="Files are paired automatically by episode number"
           kind="folder"
           onAddFiles={() => handleAddFiles()}
-          onAddFolder={() => handleAddFiles()}
+          onAddFolder={handleAddFolder}
           onDropFiles={handleDropFiles}
         />
       ) : (
@@ -206,6 +240,7 @@ export const MergeAudio: React.FC = () => {
             sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode`}
             kind="folder"
             onAddFiles={() => handleAddFiles()}
+            onAddFolder={handleAddFolder}
             onDropFiles={handleDropFiles}
           />
           <div className="match-preview">
@@ -384,6 +419,29 @@ export const MergeAudio: React.FC = () => {
               </label>
             ))}
           </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <Icon name="cpu" />
+            <span>Batch Processing</span>
+            <span className={`badge ${batch ? 'on' : ''}`}>{batch ? `${processes}×` : 'OFF'}</span>
+          </div>
+          <Switch on={batch} onChange={setBatch} label="Run jobs in parallel" />
+          {batch && (
+            <div className="field">
+              <label>Concurrent processes (system: {cpuCount} cores)</label>
+              <input
+                type="number"
+                min={1}
+                max={cpuCount}
+                value={processes}
+                onChange={(e) =>
+                  setProcesses(Math.max(1, Math.min(cpuCount, parseInt(e.target.value, 10) || 1)))
+                }
+              />
+            </div>
+          )}
         </div>
       </div>
 

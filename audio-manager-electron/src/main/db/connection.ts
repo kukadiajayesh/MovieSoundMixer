@@ -66,7 +66,8 @@ function createTables(): Promise<void> {
           operation TEXT NOT NULL,
           duration TEXT NOT NULL,
           status TEXT NOT NULL,
-          logs TEXT NOT NULL
+          logs TEXT NOT NULL,
+          input_path TEXT
         )`,
         (err) => {
           if (err) return reject(err)
@@ -99,6 +100,12 @@ function createTables(): Promise<void> {
       })
       database.run('CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)', (err) => {
         if (err) return reject(err)
+      })
+
+      // Migration: add input_path to history tables created before it existed.
+      // "duplicate column name" simply means the migration already ran — ignore it.
+      database.run('ALTER TABLE history ADD COLUMN input_path TEXT', (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) return reject(err)
         resolve()
       })
     })

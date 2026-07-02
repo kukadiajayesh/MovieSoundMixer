@@ -38,7 +38,7 @@ export const StreamPicker: React.FC<StreamPickerProps> = ({
 
   return (
     <div className="popover" style={{ left: pos.left, top: pos.top }}>
-      {streams.map((s) => (
+      {streams.map((s, ordinal) => (
         <div
           key={s.index}
           className={`po-item ${s.index === pickedIndex ? 'active' : ''}`}
@@ -52,8 +52,10 @@ export const StreamPicker: React.FC<StreamPickerProps> = ({
             <span className="codec">{s.codec.toUpperCase()}</span>
             {s.language && <span className="lang">{s.language.toUpperCase()}</span>}
           </span>
-          <span className="label">Stream a:{s.index}</span>
-          <span className="ch">{s.channels}ch</span>
+          <span className="label">{s.title || `Stream a:${ordinal}`}</span>
+          <span className="ch">
+            {s.channels}ch{s.bitrate ? ` · ${s.bitrate}` : ''}
+          </span>
         </div>
       ))}
     </div>

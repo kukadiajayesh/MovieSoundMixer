@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Sidebar, PageId } from './components/layout/Sidebar'
+import { Sidebar } from './components/layout/Sidebar'
+import { useUIStore } from './stores/uiStore'
 import { LogDrawer } from './components/design/LogDrawer'
 import { ToastHost } from './components/design/Toasts'
 import { Icon } from './components/design/Icon'
@@ -14,7 +15,8 @@ import { useHistoryStore } from './stores/historyStore'
 
 export default function App() {
   const [version, setVersion] = useState('')
-  const [currentPage, setCurrentPage] = useState<PageId>('extract')
+  const currentPage = useUIStore((s) => s.page)
+  const setCurrentPage = useUIStore((s) => s.setPage)
   const [deps, setDeps] = useState({
     ffmpegAvailable: false,
     mkvmergeAvailable: false,

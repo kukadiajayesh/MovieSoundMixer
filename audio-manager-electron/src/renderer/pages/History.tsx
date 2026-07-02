@@ -1,12 +1,67 @@
 import React, { useMemo, useState } from 'react'
-import { useHistoryStore } from '../stores/historyStore'
+import { useHistoryStore, HistoryItem } from '../stores/historyStore'
+import { useFileStore } from '../stores/fileStore'
+import { useMergeStore } from '../stores/mergeStore'
+import { useUIStore } from '../stores/uiStore'
 import { Icon } from '../components/design/Icon'
 import { useToast } from '../components/design/Toasts'
 
+const basename = (p: string) => p.substring(p.lastIndexOf(p.includes('\\') ? '\\' : '/') + 1)
+
 export const History: React.FC = () => {
   const { history, removeHistoryItem, clearHistory } = useHistoryStore()
+  const setPage = useUIStore((s) => s.setPage)
   const [search, setSearch] = useState('')
   const toast = useToast()
+
+  // Re-queue a past run from its recorded source path. Extract jobs are re-probed
+  // and dropped straight back into the Extract queue; merge jobs re-add the video
+  // to the Merge queue (the external audio track is reassigned there).
+  const handleRerun = async (item: HistoryItem) => {
+    if (!item.inputPath) {
+      toast({ kind: 'error', title: 'Cannot re-run', desc: 'No source path was recorded for this entry.' })
+      return
+    }
+    if (!window.electron?.ipcRenderer) {
+      toast({ kind: 'error', title: 'Re-run requires the Electron shell' })
+      return
+    }
+    const path = item.inputPath
+    const name = basename(path)
+
+    if (item.operation === 'EXTRACT') {
+      let duration = 0
+      let streams: any[] = []
+      let size = 0
+      try {
+        const res = await window.electron.ipcRenderer.invoke('probe-streams', path)
+        if (res?.success) {
+          duration = res.duration
+          streams = res.streams
+        }
+      } catch {
+        /* fall through with empty stream list */
+      }
+      try {
+        const props = await window.electron.ipcRenderer.invoke('get-file-properties', path)
+        if (props?.exists) size = props.size
+        else {
+          toast({ kind: 'error', title: 'Source file not found', desc: name })
+          return
+        }
+      } catch {
+        /* size stays unknown */
+      }
+      if (streams.length === 0) streams = [{ index: 0, codec: 'unknown', channels: 2 }]
+      useFileStore.getState().addFiles([{ name, path, size, duration, streams }])
+      setPage('extract')
+      toast({ kind: 'ok', title: 'Re-queued for extraction', desc: name })
+    } else {
+      useMergeStore.getState().addFiles([{ name, path }])
+      setPage('merge')
+      toast({ kind: 'info', title: 'Video re-added to Merge', desc: 'Assign an audio track to run again.' })
+    }
+  }
 
   const filtered = useMemo(
     () =>
@@ -88,9 +143,20 @@ export const History: React.FC = () => {
                 </div>
               </div>
               <span className="pill">{h.operation.toLowerCase()}</span>
-              <button className="btn btn-sm" onClick={() => removeHistoryItem(h.id)} title="Remove entry">
-                <Icon name="close" />
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => handleRerun(h)}
+                  disabled={!h.inputPath}
+                  title={h.inputPath ? 'Re-queue this run' : 'Source path not recorded'}
+                >
+                  <Icon name="play" />
+                  Re-run
+                </button>
+                <button className="btn btn-sm" onClick={() => removeHistoryItem(h.id)} title="Remove entry">
+                  <Icon name="close" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

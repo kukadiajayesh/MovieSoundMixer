@@ -408,7 +408,6 @@ body {
   color: var(--fg-3);
   letter-spacing: 0.04em;
   flex-shrink: 0;
-  text-transform: uppercase;
 }
 .fname.ext-mkv .ext { background: oklch(0.55 0.15 270 / 0.18); color: oklch(0.78 0.13 270); }
 .fname.ext-mp4 .ext { background: oklch(0.6 0.15 30 / 0.18); color: oklch(0.78 0.13 30); }

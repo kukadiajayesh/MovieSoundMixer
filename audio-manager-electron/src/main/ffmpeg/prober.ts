@@ -6,6 +6,8 @@ export interface AudioStreamInfo {
   language?: string
   codec: string
   channels: number
+  title?: string
+  bitrate?: string
 }
 
 export interface ProbeResult {
@@ -36,7 +38,14 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
 
         // Regular expressions to match Audio Streams & Duration
         const audioStreamRegex = /Stream #0:(\d+)(?:\(([^)]+)\))?:\s*Audio:\s*([^,\s\()]+)/i
+        const anyStreamRegex = /Stream #0:\d+/
         const durationRegex = /Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})/i
+        const titleRegex = /^\s*title\s*:\s*(.+?)\s*$/i
+
+        // Track the array position of the audio stream whose metadata block we're
+        // currently inside, so a following "title :" line attaches to it. Any other
+        // Stream line (video/subtitle) ends that block.
+        let currentAudioArrayIdx = -1
 
         for (const line of lines) {
           // Check for duration match
@@ -72,12 +81,26 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
               }
             }
 
+            // Bitrate lives on the same Stream line, e.g. "... 640 kb/s (default)".
+            const bitrateMatch = line.match(/(\d+)\s*kb\/s/i)
+            const bitrate = bitrateMatch ? `${bitrateMatch[1]}k` : undefined
+
             streams.push({
               index,
               language,
               codec,
               channels,
+              bitrate,
             })
+            currentAudioArrayIdx = streams.length - 1
+          } else if (anyStreamRegex.test(line)) {
+            // A non-audio stream line closes the previous audio metadata block.
+            currentAudioArrayIdx = -1
+          } else if (currentAudioArrayIdx >= 0) {
+            const titleMatch = line.match(titleRegex)
+            if (titleMatch) {
+              streams[currentAudioArrayIdx].title = titleMatch[1]
+            }
           }
         }
 

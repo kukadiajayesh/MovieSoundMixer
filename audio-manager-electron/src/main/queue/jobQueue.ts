@@ -22,7 +22,14 @@ const startTimes = new Map<string, number>()
 const jobQueue: Job[] = []
 let activeJobsCount = 0
 let isPaused = false
-const CONCURRENCY_LIMIT = 2 // standard parallel limit for desktop transcoding
+let concurrencyLimit = 2 // standard parallel limit for desktop transcoding; user-configurable
+
+/** Set how many jobs may run in parallel. Values below 1 are clamped to 1. */
+export function setConcurrency(limit: number) {
+  concurrencyLimit = Math.max(1, Math.floor(limit) || 1)
+  // A raised limit may free up slots for queued jobs.
+  processQueue()
+}
 
 // Aggregate counters across the lifetime of the current queue run.
 let totalJobs = 0
@@ -127,7 +134,7 @@ function emitQueueProgress() {
 }
 
 function processQueue() {
-  if (isPaused || activeJobsCount >= CONCURRENCY_LIMIT || jobQueue.length === 0) {
+  if (isPaused || activeJobsCount >= concurrencyLimit || jobQueue.length === 0) {
     return
   }
 
@@ -240,6 +247,7 @@ function runJob(job: Job) {
           duration: formatElapsed(elapsedMs),
           status: 'Completed',
           logs: [`Job completed successfully. Output: ${job.outputPath}`],
+          inputPath: job.inputPath,
         }).catch((err: any) => console.error('Failed to auto-insert job log to database:', err))
       } else if (!wasCancelled) {
         db.updateJobStatus(job.id, 'failed', `Process exited with code ${code}`).catch(() => {})
@@ -254,6 +262,7 @@ function runJob(job: Job) {
           duration: formatElapsed(elapsedMs),
           status: 'Failed',
           logs: [`Job failed with exit code ${code}.`],
+          inputPath: job.inputPath,
         }).catch(() => {})
       }
     }

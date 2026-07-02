@@ -8,6 +8,9 @@ export interface DBHistoryItem {
   duration: string
   status: 'Completed' | 'Failed'
   logs: string[]
+  // Absolute source path, so a run can be re-queued from History. Optional for
+  // rows written before this column existed.
+  inputPath?: string
 }
 
 // --------------------------------------------------------
@@ -54,7 +57,7 @@ export function getHistory(): Promise<DBHistoryItem[]> {
   const db = getDatabase()
   return new Promise((resolve, reject) => {
     db.all(
-      'SELECT id, date, file, operation, duration, status, logs FROM history ORDER BY date DESC',
+      'SELECT id, date, file, operation, duration, status, logs, input_path FROM history ORDER BY date DESC',
       (err, rows: any[]) => {
         if (err) {
           reject(err)
@@ -70,6 +73,7 @@ export function getHistory(): Promise<DBHistoryItem[]> {
           status: row.status,
           // Safely parse JSON logged lines
           logs: JSON.parse(row.logs || '[]'),
+          inputPath: row.input_path ?? undefined,
         }))
 
         resolve(items)
@@ -88,8 +92,17 @@ export function insertHistoryItem(item: Omit<DBHistoryItem, 'id' | 'date'>): Pro
 
   return new Promise((resolve, reject) => {
     db.run(
-      'INSERT INTO history (id, date, file, operation, duration, status, logs) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, dateString, item.file, item.operation, item.duration, item.status, JSON.stringify(item.logs)],
+      'INSERT INTO history (id, date, file, operation, duration, status, logs, input_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        dateString,
+        item.file,
+        item.operation,
+        item.duration,
+        item.status,
+        JSON.stringify(item.logs),
+        item.inputPath ?? null,
+      ],
       (err) => {
         if (err) reject(err)
         else resolve()

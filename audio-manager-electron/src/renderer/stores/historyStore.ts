@@ -8,6 +8,7 @@ export interface HistoryItem {
   duration: string
   status: 'Completed' | 'Failed'
   logs: string[]
+  inputPath?: string
 }
 
 interface HistoryState {

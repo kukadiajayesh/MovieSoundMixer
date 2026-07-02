@@ -1,9 +1,10 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
-import { enqueueJob, cancelJob, pauseQueue, resumeQueue, Job } from './queue/jobQueue'
+import { enqueueJob, cancelJob, pauseQueue, resumeQueue, setConcurrency, Job } from './queue/jobQueue'
 import { validateInputFile, validateOutputPath, resolveOutputPath, getFileProperties } from './files/fileManager'
 import { validateSetting } from './settings/settingsManager'
 import * as db from './db/repository'
@@ -39,6 +40,30 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   // 2b. File properties (size etc.) for paths picked via dialog
   ipcMain.handle('get-file-properties', async (_event, filePath: string) => {
     return getFileProperties(filePath)
+  })
+
+  // 2c. Folder selection → enumerate its media files (non-recursive).
+  // `extensions` (lowercase, no dot) filters the result; omit to return all files.
+  ipcMain.handle('open-folder-dialog', async (_event, extensions?: string[]) => {
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, filePaths: [] as string[] }
+    }
+    const folder = result.filePaths[0]
+    const exts = extensions?.map((e) => e.toLowerCase())
+    try {
+      const entries = await fs.promises.readdir(folder, { withFileTypes: true })
+      const filePaths = entries
+        .filter((e) => e.isFile())
+        .map((e) => path.join(folder, e.name))
+        .filter((fp) => {
+          if (!exts || exts.length === 0) return true
+          return exts.includes(path.extname(fp).slice(1).toLowerCase())
+        })
+      return { canceled: false, folder, filePaths }
+    } catch (err: any) {
+      return { canceled: false, folder, filePaths: [] as string[], error: err.message }
+    }
   })
 
   // 3. Probing streams
@@ -256,6 +281,12 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('resume-queue', async () => {
     resumeQueue()
+    return { success: true }
+  })
+
+  // 7c. Set how many jobs run in parallel (batch processing control)
+  ipcMain.handle('set-concurrency', async (_event, limit: number) => {
+    setConcurrency(limit)
     return { success: true }
   })
 

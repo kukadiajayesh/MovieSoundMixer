@@ -13,6 +13,7 @@ import { useToast } from '../components/design/Toasts'
 type AudioFormat = 'copy' | 'mp3' | 'aac' | 'flac'
 
 const FORMATS: AudioFormat[] = ['copy', 'mp3', 'aac', 'flac']
+const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts']
 
 const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
@@ -146,6 +147,20 @@ export const ExtractAudio: React.FC = () => {
     }
   }
 
+  const handleAddFolder = async () => {
+    if (!window.electron?.ipcRenderer) {
+      toast({ kind: 'error', title: 'File dialogs require the Electron shell' })
+      return
+    }
+    const res = await window.electron.ipcRenderer.invoke('open-folder-dialog', VIDEO_EXTS)
+    if (!res || res.canceled) return
+    if (res.filePaths.length === 0) {
+      toast({ kind: 'info', title: 'No video files found in that folder' })
+      return
+    }
+    await ingestPaths(res.filePaths.map((fp: string) => ({ path: fp })))
+  }
+
   const handleBrowseOutput = async () => {
     if (!window.electron?.ipcRenderer) return
     const result = await window.electron.ipcRenderer.invoke('browse-folder')
@@ -169,6 +184,10 @@ export const ExtractAudio: React.FC = () => {
     // Persist preferences for next launch
     updateSetting('output_directory', outputDir)
     updateSetting('default_format', format)
+
+    // Extract has no batch control of its own; run at the queue's default
+    // parallelism so a prior Merge run can't leave it stuck sequential.
+    await window.electron.ipcRenderer.invoke('set-concurrency', 2).catch(() => {})
 
     useJobStore.getState().startRun(targets.map((f) => ({ id: f.id, name: f.name })))
     useJobStore.getState().addLog(`Started extract job: ${targets.length} file(s) → ${format.toUpperCase()}`)
@@ -239,7 +258,7 @@ export const ExtractAudio: React.FC = () => {
           title="Drop video files here"
           sub="Or use the buttons — supports MKV, MP4, AVI, MOV, TS, M2TS"
           onAddFiles={handleAddFiles}
-          onAddFolder={handleAddFiles}
+          onAddFolder={handleAddFolder}
           onDropFiles={handleDropFiles}
         />
       ) : (
@@ -248,6 +267,7 @@ export const ExtractAudio: React.FC = () => {
           title="Drag more files anywhere"
           sub={`${files.length} file${files.length !== 1 ? 's' : ''} loaded · drop to add`}
           onAddFiles={handleAddFiles}
+          onAddFolder={handleAddFolder}
           onDropFiles={handleDropFiles}
         />
       )}

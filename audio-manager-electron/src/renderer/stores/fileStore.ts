@@ -5,6 +5,8 @@ export interface AudioStream {
   language?: string
   codec: string
   channels: number
+  title?: string
+  bitrate?: string
 }
 
 export interface FileEntry {
