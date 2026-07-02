@@ -20,6 +20,7 @@ export interface FileEntry {
   status: 'ready' | 'probing' | 'processing' | 'success' | 'error'
   statusText?: string
   progress: number // 0..1 while processing
+  outputPath?: string // set once the job succeeds, so the file can be opened
 }
 
 interface FileState {
@@ -31,7 +32,7 @@ interface FileState {
   toggleSelect: (id: string) => void
   toggleSelectAll: () => void
   updateStreamIndex: (id: string, streamIndex: number) => void
-  updateFileStatus: (id: string, status: FileEntry['status'], statusText?: string) => void
+  updateFileStatus: (id: string, status: FileEntry['status'], statusText?: string, outputPath?: string) => void
   updateFileProgress: (id: string, progress: number) => void
   setSearchQuery: (query: string) => void
   clearFiles: () => void
@@ -91,10 +92,12 @@ export const useFileStore = create<FileState>((set) => ({
       ),
     })),
 
-  updateFileStatus: (id, status, statusText) =>
+  updateFileStatus: (id, status, statusText, outputPath) =>
     set((state) => ({
       files: state.files.map((f) =>
-        f.id === id ? { ...f, status, statusText } : f,
+        // outputPath is intentionally replaced (not merged) so a re-run
+        // clears the stale path until the new job succeeds.
+        f.id === id ? { ...f, status, statusText, outputPath } : f,
       ),
     })),
 

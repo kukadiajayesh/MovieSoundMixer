@@ -6,6 +6,7 @@ export interface OverallProgress {
   completed: number
   total: number
   currentFile: string
+  speedMBps: number
 }
 
 interface RunFooterProps {
@@ -22,6 +23,7 @@ interface RunFooterProps {
 }
 
 const fmtPct = (n: number) => `${Math.round(n * 100)}%`
+const fmtSpeed = (mbps: number) => (mbps > 0 ? `${mbps.toFixed(1)} MB/s` : '—')
 
 export const RunFooter: React.FC<RunFooterProps> = ({
   outputDir,
@@ -43,7 +45,7 @@ export const RunFooter: React.FC<RunFooterProps> = ({
             <div className="rp-row">
               <span className="rp-current">{overall.currentFile || 'Processing…'}</span>
               <span className="rp-stats">
-                {overall.completed}/{overall.total} · {fmtPct(overall.pct)}
+                {overall.completed}/{overall.total} · {fmtPct(overall.pct)} · {fmtSpeed(overall.speedMBps)}
               </span>
             </div>
             <div className="rp-bar">

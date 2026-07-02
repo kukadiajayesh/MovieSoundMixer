@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
@@ -10,15 +10,28 @@ import { validateSetting } from './settings/settingsManager'
 import * as db from './db/repository'
 
 export function setupIPCHandlers(mainWindow: BrowserWindow) {
-  // 1. File Dialog selection
-  ipcMain.handle('open-file-dialog', async () => {
+  // 1. File Dialog selection. `kind` restricts what the picker offers:
+  // 'audio' shows only audio formats (no "All Files" escape hatch).
+  ipcMain.handle('open-file-dialog', async (_event, kind?: 'audio' | 'video') => {
+    const videoFilter = {
+      name: 'Video Files',
+      extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp'],
+    }
+    const audioFilter = {
+      name: 'Audio Files',
+      extensions: ['mp3', 'aac', 'flac', 'wav', 'm4a', 'ogg', 'wma', 'mka'],
+    }
+    const allFilter = { name: 'All Files', extensions: ['*'] }
+    const filters =
+      kind === 'audio'
+        ? [audioFilter]
+        : kind === 'video'
+          ? [videoFilter, allFilter]
+          : [videoFilter, audioFilter, allFilter]
+
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp'] },
-        { name: 'Audio Files', extensions: ['mp3', 'aac', 'flac', 'wav', 'm4a', 'ogg', 'wma'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
+      filters,
     })
     return {
       canceled: result.canceled,
@@ -287,6 +300,23 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   // 7c. Set how many jobs run in parallel (batch processing control)
   ipcMain.handle('set-concurrency', async (_event, limit: number) => {
     setConcurrency(limit)
+    return { success: true }
+  })
+
+  // 7d. Open a produced file in the OS default app / reveal it in the file manager
+  ipcMain.handle('open-path', async (_event, filePath: string) => {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File no longer exists' }
+    }
+    const error = await shell.openPath(filePath)
+    return error ? { success: false, error } : { success: true }
+  })
+
+  ipcMain.handle('show-in-folder', async (_event, filePath: string) => {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File no longer exists' }
+    }
+    shell.showItemInFolder(filePath)
     return { success: true }
   })
 

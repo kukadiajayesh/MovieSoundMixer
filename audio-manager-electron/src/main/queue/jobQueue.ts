@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
 import { BrowserWindow } from 'electron'
+import fs from 'fs'
 import path from 'path'
 import { getFFmpegPath, getMkvmergePath } from '../ffmpeg/detector'
 import * as db from '../db/repository'
@@ -19,6 +20,8 @@ let mainWindow: BrowserWindow | null = null
 const activeProcesses = new Map<string, ChildProcess>()
 const cancelledJobs = new Set<string>()
 const startTimes = new Map<string, number>()
+const speedIntervals = new Map<string, NodeJS.Timeout>()
+const speedTrackers = new Map<string, { bytes: number; time: number }>()
 const jobQueue: Job[] = []
 let activeJobsCount = 0
 let isPaused = false
@@ -145,6 +148,40 @@ function processQueue() {
   processQueue()
 }
 
+// Polls the output file's size to compute live disk-write throughput.
+// Works for both ffmpeg and mkvmerge since it watches the file itself
+// rather than parsing binary-specific progress output.
+function startSpeedTracking(job: Job) {
+  const interval = setInterval(() => {
+    fs.stat(job.outputPath, (err, stats) => {
+      if (err) return
+      const now = Date.now()
+      const prev = speedTrackers.get(job.id)
+      speedTrackers.set(job.id, { bytes: stats.size, time: now })
+      if (prev && mainWindow) {
+        const elapsedSec = (now - prev.time) / 1000
+        if (elapsedSec > 0) {
+          const mbps = Math.max(0, (stats.size - prev.bytes) / elapsedSec / (1024 * 1024))
+          mainWindow.webContents.send('job-speed', { jobId: job.id, mbps })
+        }
+      }
+    })
+  }, 1000)
+  speedIntervals.set(job.id, interval)
+}
+
+function stopSpeedTracking(jobId: string) {
+  const interval = speedIntervals.get(jobId)
+  if (interval) {
+    clearInterval(interval)
+    speedIntervals.delete(jobId)
+  }
+  speedTrackers.delete(jobId)
+  if (mainWindow) {
+    mainWindow.webContents.send('job-speed', { jobId, mbps: 0 })
+  }
+}
+
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.round(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
@@ -164,6 +201,7 @@ function runJob(job: Job) {
 
   const child = spawn(binaryPath, job.args)
   activeProcesses.set(job.id, child)
+  startSpeedTracking(job)
 
   const seenLogs = new Set<string>()
 
@@ -223,8 +261,16 @@ function runJob(job: Job) {
     }
   })
 
+  // Node fires 'close' after 'error' for the same child (e.g. spawn failure),
+  // so terminal handling must run exactly once or counters double-decrement
+  // and the renderer receives duplicate job-status events.
+  let settled = false
+
   child.on('close', (code) => {
+    if (settled) return
+    settled = true
     activeProcesses.delete(job.id)
+    stopSpeedTracking(job.id)
     activeJobsCount--
 
     const wasCancelled = cancelledJobs.has(job.id)
@@ -239,7 +285,11 @@ function runJob(job: Job) {
         db.updateJobStatus(job.id, 'success').catch(() => {})
         db.updateJobProgress(job.id, 100).catch(() => {})
         mainWindow.webContents.send('progress', { jobId: job.id, percent: 100 })
-        mainWindow.webContents.send('job-status', { jobId: job.id, status: 'success' })
+        mainWindow.webContents.send('job-status', {
+          jobId: job.id,
+          status: 'success',
+          outputPath: job.outputPath,
+        })
 
         insertHistoryItem({
           file: path.basename(job.inputPath),
@@ -272,7 +322,10 @@ function runJob(job: Job) {
   })
 
   child.on('error', (err) => {
+    if (settled) return
+    settled = true
     activeProcesses.delete(job.id)
+    stopSpeedTracking(job.id)
     activeJobsCount--
     cancelledJobs.delete(job.id)
     startTimes.delete(job.id)

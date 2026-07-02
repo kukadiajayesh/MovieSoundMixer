@@ -13,6 +13,7 @@ export interface MergePair {
   status: 'ready' | 'processing' | 'success' | 'error'
   progress: number // 0..1
   error?: string
+  outputPath?: string // set once the job succeeds, so the file can be opened
 }
 
 /** Extract a normalized SxxExx episode tag from a filename, if present. */
@@ -34,7 +35,7 @@ interface MergeState {
   assignAudio: (pairId: string, audio: MergeSource | null) => void
   removePair: (id: string) => void
   clearPairs: () => void
-  updatePairStatus: (id: string, status: MergePair['status'], error?: string) => void
+  updatePairStatus: (id: string, status: MergePair['status'], error?: string, outputPath?: string) => void
   updatePairProgress: (id: string, progress: number) => void
 }
 
@@ -90,9 +91,11 @@ export const useMergeStore = create<MergeState>((set) => ({
 
   clearPairs: () => set({ pairs: [], unmatchedAudios: [] }),
 
-  updatePairStatus: (id, status, error) =>
+  updatePairStatus: (id, status, error, outputPath) =>
     set((state) => ({
-      pairs: state.pairs.map((p) => (p.id === id ? { ...p, status, error } : p)),
+      // outputPath is intentionally replaced (not merged) so a re-run
+      // clears the stale path until the new job succeeds.
+      pairs: state.pairs.map((p) => (p.id === id ? { ...p, status, error, outputPath } : p)),
     })),
 
   updatePairProgress: (id, progress) =>

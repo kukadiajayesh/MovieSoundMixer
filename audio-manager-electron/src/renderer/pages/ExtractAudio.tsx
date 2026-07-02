@@ -17,6 +17,11 @@ const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts
 
 const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
+const dirName = (fp: string) => {
+  const sep = fp.includes('\\') ? '\\' : '/'
+  const idx = fp.lastIndexOf(sep)
+  return idx >= 0 ? { dir: fp.slice(0, idx), sep } : null
+}
 const parseEpisodeTag = (name: string) => {
   const m = name.match(/S(\d{1,2})\s*E(\d{1,3})/i)
   return m ? `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}` : null
@@ -80,6 +85,7 @@ export const ExtractAudio: React.FC = () => {
 
   // ── File ingestion ────────────────────────────────────────────────
   const ingestPaths = async (paths: Array<{ path: string; size?: number }>) => {
+    const wasEmpty = files.length === 0
     const entries: Array<{ name: string; path: string; size: number; duration: number; streams: any[] }> = []
 
     for (const { path: fp, size } of paths) {
@@ -118,6 +124,10 @@ export const ExtractAudio: React.FC = () => {
 
     if (entries.length > 0) {
       addFiles(entries)
+      if (wasEmpty) {
+        const loc = dirName(entries[0].path)
+        if (loc) setOutputDir(`${loc.dir}${loc.sep}extracted_audio`)
+      }
       toast({ kind: 'ok', title: `Added ${entries.length} file${entries.length !== 1 ? 's' : ''}` })
     }
   }
@@ -232,6 +242,14 @@ export const ExtractAudio: React.FC = () => {
     useJobStore.getState().addLog('Cancelled by user', 'warn')
   }
 
+  const openOutput = async (outputPath: string) => {
+    if (!window.electron?.ipcRenderer) return
+    const res = await window.electron.ipcRenderer.invoke('open-path', outputPath).catch(() => null)
+    if (res && !res.success) {
+      toast({ kind: 'error', title: 'Could not open file', desc: res.error })
+    }
+  }
+
   const removeSelected = () => {
     const count = selectedIds.length
     removeFiles(selectedIds)
@@ -262,14 +280,16 @@ export const ExtractAudio: React.FC = () => {
           onDropFiles={handleDropFiles}
         />
       ) : (
-        <Dropzone
-          slim
-          title="Drag more files anywhere"
-          sub={`${files.length} file${files.length !== 1 ? 's' : ''} loaded · drop to add`}
-          onAddFiles={handleAddFiles}
-          onAddFolder={handleAddFolder}
-          onDropFiles={handleDropFiles}
-        />
+        !running && (
+          <Dropzone
+            slim
+            title="Drag more files anywhere"
+            sub={`${files.length} file${files.length !== 1 ? 's' : ''} loaded · drop to add`}
+            onAddFiles={handleAddFiles}
+            onAddFolder={handleAddFolder}
+            onDropFiles={handleDropFiles}
+          />
+        )
       )}
 
       <div className="toolbar">
@@ -349,6 +369,15 @@ export const ExtractAudio: React.FC = () => {
                     <StatusCell status={toRowStatus(row.status)} progress={row.progress} error={row.statusText} />
                   </td>
                   <td className="col-actions">
+                    {row.status === 'success' && row.outputPath && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Open extracted file"
+                        onClick={() => openOutput(row.outputPath!)}
+                      >
+                        <Icon name="play" />
+                      </button>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={() => removeFiles([row.id])}>
                       <Icon name="close" />
                     </button>

@@ -12,6 +12,8 @@ interface ActiveJob {
   id: string
   name: string
   progress: number // 0..1
+  speedMBps: number
+  done: boolean // terminal event already counted — guards against duplicates
 }
 
 interface JobState {
@@ -26,6 +28,7 @@ interface JobState {
 
   startRun: (jobs: Array<{ id: string; name: string }>) => void
   updateJobProgress: (jobId: string, percent: number) => void
+  updateJobSpeed: (jobId: string, mbps: number) => void
   finishJob: (jobId: string, ok: boolean) => void
   stopRun: () => void
   addLog: (msg: string, tag?: LogTag) => void
@@ -48,18 +51,17 @@ export const useJobStore = create<JobState>((set) => ({
   startRun: (jobs) =>
     set({
       running: true,
-      jobs: jobs.map((j) => ({ ...j, progress: 0 })),
+      jobs: jobs.map((j) => ({ ...j, progress: 0, speedMBps: 0, done: false })),
       completed: 0,
       failed: 0,
       total: jobs.length,
       currentFile: jobs[0]?.name || '',
-      drawerCollapsed: false,
     }),
 
   updateJobProgress: (jobId, percent) =>
     set((state) => {
       const jobs = state.jobs.map((j) =>
-        j.id === jobId ? { ...j, progress: Math.min(1, percent / 100) } : j,
+        j.id === jobId && !j.done ? { ...j, progress: Math.min(1, percent / 100) } : j,
       )
       const active = jobs.find((j) => j.id === jobId)
       return {
@@ -68,10 +70,19 @@ export const useJobStore = create<JobState>((set) => ({
       }
     }),
 
+  updateJobSpeed: (jobId, mbps) =>
+    set((state) => ({
+      jobs: state.jobs.map((j) => (j.id === jobId ? { ...j, speedMBps: mbps } : j)),
+    })),
+
   finishJob: (jobId, ok) =>
     set((state) => {
-      if (!state.jobs.some((j) => j.id === jobId)) return state
-      const jobs = state.jobs.map((j) => (j.id === jobId ? { ...j, progress: 1 } : j))
+      const job = state.jobs.find((j) => j.id === jobId)
+      // Unknown id (stale event from a stopped run) or already-counted job:
+      // ignore, otherwise duplicate terminal events end the run early and
+      // the footer progress bar vanishes mid-run.
+      if (!job || job.done) return state
+      const jobs = state.jobs.map((j) => (j.id === jobId ? { ...j, progress: 1, done: true } : j))
       const completed = state.completed + (ok ? 1 : 0)
       const failed = state.failed + (ok ? 0 : 1)
       const done = completed + failed >= state.total
@@ -84,7 +95,10 @@ export const useJobStore = create<JobState>((set) => ({
       }
     }),
 
-  stopRun: () => set({ running: false }),
+  // Clearing jobs makes any events that trickle in after a stop hit the
+  // unknown-id guards instead of polluting the next run (job ids are file
+  // ids, so they repeat across runs).
+  stopRun: () => set({ running: false, jobs: [] }),
 
   addLog: (msg, tag = 'info') =>
     set((state) => ({
@@ -100,10 +114,12 @@ export const useJobStore = create<JobState>((set) => ({
 /** Overall progress in the shape the RunFooter expects. */
 export const selectOverall = (s: JobState) => {
   const sum = s.jobs.reduce((acc, j) => acc + j.progress, 0)
+  const speedMBps = s.jobs.reduce((acc, j) => acc + (j.progress < 1 ? j.speedMBps : 0), 0)
   return {
     pct: s.total > 0 ? sum / s.total : 0,
     completed: s.completed,
     total: s.total,
     currentFile: s.currentFile,
+    speedMBps,
   }
 }

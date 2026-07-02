@@ -27,22 +27,31 @@ export const useIPC = () => {
       useMergeStore.getState().updatePairProgress(data.jobId, Math.min(1, data.percent / 100))
     }
 
+    const speedListener = (_event: any, data: { jobId: string; mbps: number }) => {
+      useJobStore.getState().updateJobSpeed(data.jobId, data.mbps)
+    }
+
     const logsListener = (_event: any, data: { jobId: string; message: string }) => {
       useJobStore.getState().addLog(data.message, classifyLogLine(data.message))
     }
 
     const statusListener = (
       _event: any,
-      data: { jobId: string; status: 'processing' | 'success' | 'failed'; error?: string },
+      data: {
+        jobId: string
+        status: 'processing' | 'success' | 'failed'
+        error?: string
+        outputPath?: string
+      },
     ) => {
       const files = useFileStore.getState()
       const pairs = useMergeStore.getState()
       const jobs = useJobStore.getState()
 
       if (data.status === 'success') {
-        files.updateFileStatus(data.jobId, 'success', 'Done')
+        files.updateFileStatus(data.jobId, 'success', 'Done', data.outputPath)
         files.updateFileProgress(data.jobId, 1)
-        pairs.updatePairStatus(data.jobId, 'success')
+        pairs.updatePairStatus(data.jobId, 'success', undefined, data.outputPath)
         pairs.updatePairProgress(data.jobId, 1)
         jobs.finishJob(data.jobId, true)
         // Reload SQLite history when a background conversion finishes
@@ -60,11 +69,13 @@ export const useIPC = () => {
     }
 
     electron.ipcRenderer.on('progress', progressListener)
+    electron.ipcRenderer.on('job-speed', speedListener)
     electron.ipcRenderer.on('log-output', logsListener)
     electron.ipcRenderer.on('job-status', statusListener)
 
     return () => {
       electron.ipcRenderer.removeListener('progress', progressListener)
+      electron.ipcRenderer.removeListener('job-speed', speedListener)
       electron.ipcRenderer.removeListener('log-output', logsListener)
       electron.ipcRenderer.removeListener('job-status', statusListener)
     }

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "audio-manager-vite",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "audio-manager-electron", "run", "dev:vite"],
+      "port": 5173
+    }
+  ]
+}

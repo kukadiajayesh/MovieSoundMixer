@@ -123,6 +123,7 @@ body {
 /* Sidebar */
 .sidebar {
   grid-area: sidebar;
+  width: 220px;
   background: var(--bg-2);
   border-right: 1px solid var(--line);
   display: flex;
@@ -343,7 +344,7 @@ body {
 /* ─── File table ─────────────────────────────────────────────────────── */
 .tbl-wrap {
   flex: 1;
-  margin: 0 24px;
+  margin: 0 24px 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
@@ -396,7 +397,7 @@ body {
 .col-meta { width: 120px; color: var(--fg-3); font-size: 11px; }
 .col-stream { width: 220px; }
 .col-status { width: 180px; }
-.col-actions { width: 60px; text-align: right; }
+.col-actions { width: 76px; text-align: right; white-space: nowrap; }
 
 .fname { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fname .ext {

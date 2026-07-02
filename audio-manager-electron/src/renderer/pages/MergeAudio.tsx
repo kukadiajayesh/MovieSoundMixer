@@ -21,6 +21,11 @@ const MEDIA_EXTS = [
 
 const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
+const dirName = (fp: string) => {
+  const sep = fp.includes('\\') ? '\\' : '/'
+  const idx = fp.lastIndexOf(sep)
+  return idx >= 0 ? { dir: fp.slice(0, idx), sep } : null
+}
 
 const toRowStatus = (status: MergePair['status']): RowStatus => {
   switch (status) {
@@ -69,6 +74,10 @@ export const MergeAudio: React.FC = () => {
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
     if (entries.length === 0) return
+    if (pairs.length === 0 && unmatchedAudios.length === 0) {
+      const loc = dirName(entries[0].path)
+      if (loc) setOutputDir(`${loc.dir}${loc.sep}Merged Audio`)
+    }
     addFiles(entries)
     const videos = entries.filter((e) => isVideoFile(e.name)).length
     toast({
@@ -94,7 +103,9 @@ export const MergeAudio: React.FC = () => {
       toast({ kind: 'error', title: 'File dialogs require the Electron shell' })
       return
     }
-    const res = await window.electron.ipcRenderer.invoke('open-file-dialog')
+    // Assigning audio to a specific row restricts the picker to audio formats
+    const res = await window.electron.ipcRenderer.invoke('open-file-dialog', pairId ? 'audio' : undefined)
+    if (pairId) setAssigning(null) // clear "Choosing…" even when the dialog is cancelled
     if (res && !res.canceled && res.filePaths.length > 0) {
       const entries = res.filePaths.map((fp: string) => ({
         name: fp.substring(fp.lastIndexOf(fp.includes('\\') ? '\\' : '/') + 1),
@@ -104,7 +115,6 @@ export const MergeAudio: React.FC = () => {
         // Manual audio assignment for one row
         const audio = entries.find((e: { name: string }) => !isVideoFile(e.name)) || entries[0]
         assignAudio(pairId, audio)
-        setAssigning(null)
       } else {
         ingest(entries)
       }
@@ -196,6 +206,14 @@ export const MergeAudio: React.FC = () => {
     }
   }
 
+  const openOutput = async (outputPath: string) => {
+    if (!window.electron?.ipcRenderer) return
+    const res = await window.electron.ipcRenderer.invoke('open-path', outputPath).catch(() => null)
+    if (res && !res.success) {
+      toast({ kind: 'error', title: 'Could not open file', desc: res.error })
+    }
+  }
+
   const handleStop = async () => {
     if (window.electron?.ipcRenderer) {
       for (const j of jobs) {
@@ -234,15 +252,17 @@ export const MergeAudio: React.FC = () => {
         />
       ) : (
         <>
-          <Dropzone
-            slim
-            title="Drag more files"
-            sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode`}
-            kind="folder"
-            onAddFiles={() => handleAddFiles()}
-            onAddFolder={handleAddFolder}
-            onDropFiles={handleDropFiles}
-          />
+          {!running && (
+            <Dropzone
+              slim
+              title="Drag more files"
+              sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode`}
+              kind="folder"
+              onAddFiles={() => handleAddFiles()}
+              onAddFolder={handleAddFolder}
+              onDropFiles={handleDropFiles}
+            />
+          )}
           <div className="match-preview">
             <Icon name="info" className="ico" />
             <span className="label">Episode auto-match:</span>
@@ -276,6 +296,7 @@ export const MergeAudio: React.FC = () => {
                 <th>Audio</th>
                 <th className="col-meta">Episode</th>
                 <th className="col-status">Status</th>
+                <th className="col-actions"></th>
               </tr>
             </thead>
             <tbody>
@@ -312,6 +333,17 @@ export const MergeAudio: React.FC = () => {
                   </td>
                   <td className="col-status">
                     <StatusCell status={toRowStatus(p.status)} progress={p.progress} error={p.error} />
+                  </td>
+                  <td className="col-actions">
+                    {p.status === 'success' && p.outputPath && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Open merged file"
+                        onClick={() => openOutput(p.outputPath!)}
+                      >
+                        <Icon name="play" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
