@@ -12,8 +12,10 @@ export const useTheme = () => {
         const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches
         const resolvedTheme = isSystemLight ? 'light' : 'dark'
         root.setAttribute('data-theme', resolvedTheme)
+        window.electron?.ipcRenderer?.invoke('set-title-bar-theme', resolvedTheme)
       } else {
         root.setAttribute('data-theme', currentTheme)
+        window.electron?.ipcRenderer?.invoke('set-title-bar-theme', currentTheme)
       }
     }
 

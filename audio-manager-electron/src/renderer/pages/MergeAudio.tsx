@@ -51,7 +51,7 @@ export const MergeAudio: React.FC = () => {
   const [outputDir, setOutputDir] = useState('')
   const [container, setContainer] = useState<'mkv' | 'mp4' | 'webm'>('mkv')
   const [mergeMode, setMergeMode] = useState<'replace' | 'secondary'>('secondary')
-  const [copyVideo, setCopyVideo] = useState(true)
+  const copyVideo = !gpuEnabled
   const [backend, setBackend] = useState<Backend>('auto')
   const [quality, setQuality] = useState<Quality>('balanced')
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
@@ -363,7 +363,7 @@ export const MergeAudio: React.FC = () => {
           <Switch
             on={gpuEnabled}
             onChange={(v) => updateSetting('gpu_enabled', String(v))}
-            label="Enable hardware encoding"
+            label={gpuEnabled ? 'Hardware encoding (re-encodes video)' : 'Copy video stream (no re-encode, fastest)'}
           />
           {gpuEnabled && (
             <>
@@ -393,7 +393,6 @@ export const MergeAudio: React.FC = () => {
               </div>
             </>
           )}
-          <Switch on={copyVideo} onChange={setCopyVideo} label="Copy video stream (no re-encode, fastest)" />
         </div>
 
         <div className="card">

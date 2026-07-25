@@ -375,4 +375,16 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       return { success: false, error: err.message }
     }
   })
+
+  ipcMain.handle('set-title-bar-theme', (_event, theme: 'light' | 'dark') => {
+    try {
+      mainWindow.setTitleBarOverlay({
+        color: theme === 'light' ? '#fcfcfc' : '#2b2d31',
+        symbolColor: theme === 'light' ? '#000000' : '#ffffff',
+      })
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
 }

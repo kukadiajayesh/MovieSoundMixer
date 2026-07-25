@@ -13,7 +13,15 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
     },
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#2b2d31', // matches dark mode roughly
+      symbolColor: '#ffffff',
+      height: 36
+    },
   })
+
+  mainWindow.setMenuBarVisibility(false)
 
   // Initialize job queue window binding and IPC handlers
   setMainWindow(mainWindow)

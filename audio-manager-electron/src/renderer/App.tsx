@@ -80,11 +80,7 @@ export default function App() {
     <ToastHost>
       <div className="app">
         <div className="titlebar">
-          <div className="tl-dots">
-            <span />
-            <span />
-            <span />
-          </div>
+          <div className="tl-left-spacer" style={{ width: '200px' }}></div>
           <div className="tl-title">FFmpeg Audio Manager{version ? ` — v${version}` : ''}</div>
           <div className="tl-spacer">
             <div className="tl-actions">

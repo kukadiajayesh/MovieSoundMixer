@@ -49,16 +49,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ))}
       </nav>
-      <div className="sb-section">Developer</div>
-      <nav className="sb-nav">
-        <div
-          className={`sb-item ${activePage === 'showcase' ? 'active' : ''}`}
-          onClick={() => onPageChange('showcase')}
-        >
-          <Icon name="layers" />
-          <span>UI Showcase</span>
-        </div>
-      </nav>
       <div className="sb-status">
         <div className="sb-stat-row">
           <span className={`sb-dot ${ffmpegAvailable ? '' : 'off'}`} />

@@ -10,10 +10,29 @@ export const LogDrawer: React.FC = () => {
   const setCollapsed = useJobStore((s) => s.setDrawerCollapsed)
   const clearLogs = useJobStore((s) => s.clearLogs)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // Only auto-scroll while the user hasn't scrolled away from the bottom,
+  // so reading older lines during a run doesn't get yanked back down.
+  const stickToBottomRef = useRef(true)
 
   useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
-  }, [logs, collapsed])
+    // Opening the drawer always lands at the latest line.
+    if (!collapsed && bodyRef.current) {
+      stickToBottomRef.current = true
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+    }
+  }, [collapsed])
+
+  useEffect(() => {
+    if (stickToBottomRef.current && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+    }
+  }, [logs])
+
+  const handleScroll = () => {
+    const el = bodyRef.current
+    if (!el) return
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
 
   const errCount = logs.filter((l) => l.tag === 'error').length
 
@@ -49,7 +68,7 @@ export const LogDrawer: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="drawer-body" ref={bodyRef}>
+      <div className="drawer-body" ref={bodyRef} onScroll={handleScroll}>
         {logs.map((l, i) => (
           <div key={i} className={`log-line ${l.tag === 'cmd' ? 'cmd' : ''}`}>
             <span className="ts">{l.ts}</span>

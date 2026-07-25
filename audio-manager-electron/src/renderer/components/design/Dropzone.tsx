@@ -25,6 +25,15 @@ export const Dropzone: React.FC<DropzoneProps> = ({
   return (
     <div
       className={`dropzone ${slim ? 'slim' : ''} ${drag ? 'drag' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={onAddFiles}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onAddFiles?.()
+        }
+      }}
       onDragOver={(e) => {
         e.preventDefault()
         setDrag(true)
@@ -47,13 +56,25 @@ export const Dropzone: React.FC<DropzoneProps> = ({
       </div>
       <div className="dz-actions">
         {onAddFiles && (
-          <button className="btn" onClick={onAddFiles}>
+          <button
+            className="btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddFiles()
+            }}
+          >
             <Icon name="plus" />
             Add files
           </button>
         )}
         {onAddFolder && (
-          <button className="btn" onClick={onAddFolder}>
+          <button
+            className="btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddFolder?.()
+            }}
+          >
             <Icon name="folder" />
             Add folder
           </button>
