@@ -13,14 +13,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist node_modules (
-    echo [SETUP] Installing dependencies - first run only...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] npm install failed.
-        pause
-        exit /b 1
-    )
+echo [SETUP] Updating dependencies...
+call npm install
+if errorlevel 1 (
+    echo [ERROR] npm install failed.
+    pause
+    exit /b 1
+)
+
+echo [BUILD] Building FFmpeg Audio Manager...
+call npm run build:vite
+if errorlevel 1 (
+    echo [ERROR] Vite build failed.
+    pause
+    exit /b 1
+)
+call npm run build:main
+if errorlevel 1 (
+    echo [ERROR] Main process build failed.
+    pause
+    exit /b 1
 )
 
 echo [START] Launching FFmpeg Audio Manager...
