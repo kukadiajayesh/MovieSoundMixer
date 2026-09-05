@@ -6,7 +6,7 @@
   "scripts": {
     "dev:vite": "vite",
     "dev:main": "tsc -p tsconfig.main.json --watch",
-    "dev:electron": "wait-on http://localhost:5173 && set NODE_ENV=development && electron .",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
     "start": "concurrently \"npm run dev:vite\" \"npm run dev:main\" \"npm run dev:electron\" --kill-others",
     "build:vite": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
@@ -28,6 +28,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "bull": "^4.16.5",
     "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
     "electron": "^42.0.1",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.4",
