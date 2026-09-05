@@ -4,7 +4,6 @@ import { useUIStore } from './stores/uiStore'
 import { LogDrawer } from './components/design/LogDrawer'
 import { ToastHost } from './components/design/Toasts'
 import { Icon } from './components/design/Icon'
-import { ExtractAudio } from './pages/ExtractAudio'
 import { MergeAudio } from './pages/MergeAudio'
 import { History } from './pages/History'
 import { ComponentShowcase } from './pages/ComponentShowcase'
@@ -63,8 +62,6 @@ export default function App() {
 
   const renderActivePage = () => {
     switch (currentPage) {
-      case 'extract':
-        return <ExtractAudio />
       case 'merge':
         return <MergeAudio />
       case 'history':

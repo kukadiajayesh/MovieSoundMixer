@@ -3,20 +3,29 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write|Bash",
-        "command": "code-review-graph update --quiet",
-        "timeout": 5000
+        "hooks": [
+          { "type": "command", "command": "code-review-graph update", "timeout": 5 }
+        ]
       }
     ],
     "SessionStart": [
       {
-        "command": "code-review-graph status --json",
-        "timeout": 3000
+        "hooks": [
+          { "type": "command", "command": "code-review-graph status --json", "timeout": 3 }
+        ]
       }
     ],
-    "PreCommit": [
+    "PreToolUse": [
       {
-        "command": "code-review-graph detect-changes --brief",
-        "timeout": 10000
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "code-review-graph detect-changes --brief",
+            "timeout": 10,
+            "if": "Bash(git commit *)"
+          }
+        ]
       }
     ]
   }

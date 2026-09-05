@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useMergeStore, MergePair, isVideoFile } from '../stores/mergeStore'
+import { useMergeStore, MergePair, MergeSource, isVideoFile } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { Icon } from '../components/design/Icon'
 import { Dropzone } from '../components/design/Dropzone'
 import { RunFooter } from '../components/design/RunFooter'
 import { StatusCell, RowStatus } from '../components/design/StatusCell'
+import { StreamPicker } from '../components/design/StreamPicker'
 import { Switch } from '../components/design/Switch'
 import { useToast } from '../components/design/Toasts'
 
@@ -41,7 +42,7 @@ const toRowStatus = (status: MergePair['status']): RowStatus => {
 }
 
 export const MergeAudio: React.FC = () => {
-  const { pairs, unmatchedAudios, addFiles, assignAudio, clearPairs } = useMergeStore()
+  const { pairs, unmatchedAudios, addFiles, assignAudio, updateAudioStreamIndex, clearPairs } = useMergeStore()
   const running = useJobStore((s) => s.running)
   const overall = useJobStore(useShallow(selectOverall))
   const jobs = useJobStore((s) => s.jobs)
@@ -56,6 +57,9 @@ export const MergeAudio: React.FC = () => {
   const [quality, setQuality] = useState<Quality>('balanced')
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
   const [assigning, setAssigning] = useState<string | null>(null)
+  const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
+    null,
+  )
 
   useEffect(() => {
     window.electron?.ipcRenderer
@@ -94,13 +98,33 @@ export const MergeAudio: React.FC = () => {
     )
   }
 
+  // Probe a picked audio source so a video (or any multi-track file) can be used
+  // as the audio donor with a specific channel, not just a plain audio file.
+  const probeAudioSource = async (entry: { name: string; path: string }): Promise<MergeSource> => {
+    if (!window.electron?.ipcRenderer) return entry
+    let streams: MergeSource['streams'] = []
+    try {
+      const res = await window.electron.ipcRenderer.invoke('probe-streams', entry.path)
+      if (res?.success) streams = res.streams
+    } catch (err) {
+      console.error('Failed to probe audio source:', err)
+    }
+    if (!streams || streams.length === 0) {
+      // No detectable audio — still assign it so the reason is visible in the UI
+      streams = [{ index: 0, codec: 'unknown', channels: 2 }]
+    }
+    const preferred = streams.find((s) => s.isDefault) ?? streams[0]
+    return { ...entry, streams, selectedStreamIndex: preferred.index }
+  }
+
   const handleAddFiles = async (pairId?: string) => {
     if (!window.electron?.ipcRenderer) {
       toast({ kind: 'error', title: 'File dialogs require the Electron shell' })
       return
     }
-    // Assigning audio to a specific row restricts the picker to audio formats
-    const res = await window.electron.ipcRenderer.invoke('open-file-dialog', pairId ? 'audio' : undefined)
+    // Manual assignment now accepts either an audio file or a video file (its
+    // audio channel is picked afterwards), so no `kind` restriction here.
+    const res = await window.electron.ipcRenderer.invoke('open-file-dialog')
     if (pairId) setAssigning(null) // clear "Choosing…" even when the dialog is cancelled
     if (res && !res.canceled && res.filePaths.length > 0) {
       const entries = res.filePaths.map((fp: string) => ({
@@ -108,8 +132,9 @@ export const MergeAudio: React.FC = () => {
         path: fp,
       }))
       if (pairId) {
-        // Manual audio assignment for one row
-        const audio = entries.find((e: { name: string }) => !isVideoFile(e.name)) || entries[0]
+        // Manual audio assignment for one row — a single file, probed for its
+        // audio streams so a channel can be picked.
+        const audio = await probeAudioSource(entries[0])
         assignAudio(pairId, audio)
       } else {
         ingest(entries)
@@ -177,10 +202,18 @@ export const MergeAudio: React.FC = () => {
           /* progress will just be indeterminate */
         }
 
+        // FFmpeg maps audio by ordinal (a:N) — translate the absolute stream
+        // index picked in the channel popover, same convention as Extract Audio.
+        const audioStreamIndex = Math.max(
+          0,
+          (p.audio!.streams ?? []).findIndex((s) => s.index === p.audio!.selectedStreamIndex),
+        )
+
         const res = await window.electron.ipcRenderer.invoke('start-merge', {
           id: p.id,
           videoPath: p.video.path,
           audioPath: p.audio!.path,
+          audioStreamIndex,
           outContainer: container,
           outFolder: outputDir,
           copyVideo,
@@ -222,12 +255,33 @@ export const MergeAudio: React.FC = () => {
     useJobStore.getState().addLog('Cancelled by user', 'warn')
   }
 
+  // Cancel just one in-flight row — leaves the other queued/running rows
+  // untouched. The backend emits a 'job-status' failure for this id, which
+  // useIPC already turns into the row's error state and finishes the job.
+  const handleCancelPair = async (id: string) => {
+    if (!window.electron?.ipcRenderer) return
+    await window.electron.ipcRenderer.invoke('cancel-job', id).catch(() => {})
+  }
+
+  // Remove a single row from the list. Also cancels any backend job for it
+  // first (covers a row still pending/processing in a batch run) so it can't
+  // silently finish after being dropped from view.
+  const handleRemovePair = async (id: string) => {
+    if (window.electron?.ipcRenderer) {
+      await window.electron.ipcRenderer.invoke('cancel-job', id).catch(() => {})
+    }
+    useMergeStore.getState().removePair(id)
+  }
+
   return (
     <>
       <div className="page-head">
         <div>
           <h1 className="ph-title">Merge Audio</h1>
-          <p className="ph-sub">Add an external audio track to videos. Auto-matches by episode (SxxExx).</p>
+          <p className="ph-sub">
+            Add an external audio track to videos. Auto-matches by episode (SxxExx) — or click a row's
+            audio cell and pick a video directly to pull one of its channels.
+          </p>
         </div>
         <div className="ph-actions">
           <button className="btn btn-ghost" onClick={clearPairs} disabled={pairs.length === 0 || running}>
@@ -288,8 +342,8 @@ export const MergeAudio: React.FC = () => {
             <thead>
               <tr>
                 <th className="col-idx">#</th>
-                <th>Video</th>
-                <th>Audio</th>
+                <th>Target Video</th>
+                <th>Source Audio File</th>
                 <th className="col-meta">Episode</th>
                 <th className="col-status">Status</th>
                 <th className="col-actions"></th>
@@ -311,12 +365,34 @@ export const MergeAudio: React.FC = () => {
                       setAssigning(p.id)
                       handleAddFiles(p.id)
                     }}
-                    title="Click to choose a different audio file"
+                    title="Click to choose a different audio or video file"
                   >
                     {p.audio ? (
-                      <div className={`fname ext-${fileExt(p.audio.name)}`}>
-                        <span className="ext">{fileExt(p.audio.name)}</span>
-                        <span className="label">{baseName(p.audio.name)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <div className={`fname ext-${fileExt(p.audio.name)}`}>
+                          <span className="ext">{fileExt(p.audio.name)}</span>
+                          <span className="label">{baseName(p.audio.name)}</span>
+                        </div>
+                        {p.audio.streams && p.audio.streams.length > 0 && (() => {
+                          const picked =
+                            p.audio!.streams!.find((s) => s.index === p.audio!.selectedStreamIndex) ??
+                            p.audio!.streams![0]
+                          return (
+                            <span
+                              className="stream-pick"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setChannelPicker({ pairId: p.id, audio: p.audio!, anchor: e.currentTarget })
+                              }}
+                              title="Click to choose a different audio channel"
+                            >
+                              <span className="badge">{picked.codec.toUpperCase()}</span>
+                              {picked.language && <span className="lang">{picked.language.toUpperCase()}</span>}
+                              <span className="ch">{picked.channels}ch</span>
+                              <Icon name="chevron" className="caret" />
+                            </span>
+                          )
+                        })()}
                       </div>
                     ) : (
                       <span style={{ color: 'var(--warn)', fontSize: 11, fontStyle: 'italic' }}>
@@ -338,6 +414,23 @@ export const MergeAudio: React.FC = () => {
                         onClick={() => openOutput(p.outputPath!)}
                       >
                         <Icon name="play" />
+                      </button>
+                    )}
+                    {p.status === 'processing' ? (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Cancel this file"
+                        onClick={() => handleCancelPair(p.id)}
+                      >
+                        <Icon name="stop" />
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Remove this file"
+                        onClick={() => handleRemovePair(p.id)}
+                      >
+                        <Icon name="close" />
                       </button>
                     )}
                   </td>
@@ -448,6 +541,16 @@ export const MergeAudio: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {channelPicker && (
+        <StreamPicker
+          streams={channelPicker.audio.streams ?? []}
+          pickedIndex={channelPicker.audio.selectedStreamIndex ?? 0}
+          anchor={channelPicker.anchor}
+          onPick={(index) => updateAudioStreamIndex(channelPicker.pairId, index)}
+          onClose={() => setChannelPicker(null)}
+        />
+      )}
 
       <RunFooter
         outputDir={outputDir}

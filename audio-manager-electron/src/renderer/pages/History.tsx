@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react'
 import { useHistoryStore, HistoryItem } from '../stores/historyStore'
-import { useFileStore } from '../stores/fileStore'
 import { useMergeStore } from '../stores/mergeStore'
 import { useUIStore } from '../stores/uiStore'
 import { Icon } from '../components/design/Icon'
@@ -14,10 +13,18 @@ export const History: React.FC = () => {
   const [search, setSearch] = useState('')
   const toast = useToast()
 
-  // Re-queue a past run from its recorded source path. Extract jobs are re-probed
-  // and dropped straight back into the Extract queue; merge jobs re-add the video
-  // to the Merge queue (the external audio track is reassigned there).
-  const handleRerun = async (item: HistoryItem) => {
+  // Re-queue a past merge run from its recorded source path: re-adds the video
+  // to the Merge queue (the external audio track is reassigned there). Extract
+  // Audio has been removed, so older EXTRACT entries can't be re-queued.
+  const handleRerun = (item: HistoryItem) => {
+    if (item.operation === 'EXTRACT') {
+      toast({
+        kind: 'info',
+        title: 'Extract Audio has been removed',
+        desc: 'Pick the source video directly in Merge Audio and choose its audio channel there instead.',
+      })
+      return
+    }
     if (!item.inputPath) {
       toast({ kind: 'error', title: 'Cannot re-run', desc: 'No source path was recorded for this entry.' })
       return
@@ -29,38 +36,9 @@ export const History: React.FC = () => {
     const path = item.inputPath
     const name = basename(path)
 
-    if (item.operation === 'EXTRACT') {
-      let duration = 0
-      let streams: any[] = []
-      let size = 0
-      try {
-        const res = await window.electron.ipcRenderer.invoke('probe-streams', path)
-        if (res?.success) {
-          duration = res.duration
-          streams = res.streams
-        }
-      } catch {
-        /* fall through with empty stream list */
-      }
-      try {
-        const props = await window.electron.ipcRenderer.invoke('get-file-properties', path)
-        if (props?.exists) size = props.size
-        else {
-          toast({ kind: 'error', title: 'Source file not found', desc: name })
-          return
-        }
-      } catch {
-        /* size stays unknown */
-      }
-      if (streams.length === 0) streams = [{ index: 0, codec: 'unknown', channels: 2 }]
-      useFileStore.getState().addFiles([{ name, path, size, duration, streams }])
-      setPage('extract')
-      toast({ kind: 'ok', title: 'Re-queued for extraction', desc: name })
-    } else {
-      useMergeStore.getState().addFiles([{ name, path }])
-      setPage('merge')
-      toast({ kind: 'info', title: 'Video re-added to Merge', desc: 'Assign an audio track to run again.' })
-    }
+    useMergeStore.getState().addFiles([{ name, path }])
+    setPage('merge')
+    toast({ kind: 'info', title: 'Video re-added to Merge', desc: 'Assign an audio track to run again.' })
   }
 
   const filtered = useMemo(
@@ -125,7 +103,7 @@ export const History: React.FC = () => {
           <p className="title">{history.length === 0 ? 'No history yet' : 'No matches'}</p>
           <p className="sub">
             {history.length === 0
-              ? 'Completed extract and merge runs will appear here.'
+              ? 'Completed merge runs will appear here.'
               : 'Try a different search term.'}
           </p>
         </div>

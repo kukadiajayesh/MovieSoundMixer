@@ -1,10 +1,9 @@
 import React from 'react'
 import { Icon, IconName } from '../design/Icon'
-import { useFileStore } from '../../stores/fileStore'
 import { useMergeStore } from '../../stores/mergeStore'
 import { useHistoryStore } from '../../stores/historyStore'
 
-export type PageId = 'extract' | 'merge' | 'history' | 'showcase'
+export type PageId = 'merge' | 'history' | 'showcase'
 
 export interface SidebarProps {
   activePage: PageId
@@ -23,12 +22,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   gpuActive = false,
   gpuCount = 0,
 }) => {
-  const extractCount = useFileStore((s) => s.files.length)
   const mergeCount = useMergeStore((s) => s.pairs.length)
   const historyCount = useHistoryStore((s) => s.history.length)
 
   const items: Array<{ id: PageId; label: string; icon: IconName; count: number }> = [
-    { id: 'extract', label: 'Extract', icon: 'extract', count: extractCount },
     { id: 'merge', label: 'Merge', icon: 'merge', count: mergeCount },
     { id: 'history', label: 'History', icon: 'history', count: historyCount },
   ]

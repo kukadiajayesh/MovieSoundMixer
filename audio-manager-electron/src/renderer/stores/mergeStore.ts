@@ -1,8 +1,24 @@
 import { create } from 'zustand'
 
+// Shape returned by the `probe-streams` IPC call — one entry per audio stream
+// in a probed file.
+export interface AudioStream {
+  index: number
+  language?: string
+  codec: string
+  channels: number
+  title?: string
+  bitrate?: string
+  isDefault?: boolean
+}
+
 export interface MergeSource {
   name: string
   path: string
+  // Present once the source has been probed — lets a video (or multi-track
+  // audio) file be used as the audio donor with a specific channel picked.
+  streams?: AudioStream[]
+  selectedStreamIndex?: number
 }
 
 export interface MergePair {
@@ -33,6 +49,7 @@ interface MergeState {
   unmatchedAudios: MergeSource[]
   addFiles: (files: MergeSource[]) => void
   assignAudio: (pairId: string, audio: MergeSource | null) => void
+  updateAudioStreamIndex: (pairId: string, streamIndex: number) => void
   removePair: (id: string) => void
   clearPairs: () => void
   updatePairStatus: (id: string, status: MergePair['status'], error?: string, outputPath?: string) => void
@@ -82,6 +99,13 @@ export const useMergeStore = create<MergeState>((set) => ({
   assignAudio: (pairId, audio) =>
     set((state) => ({
       pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audio } : p)),
+    })),
+
+  updateAudioStreamIndex: (pairId, streamIndex) =>
+    set((state) => ({
+      pairs: state.pairs.map((p) =>
+        p.id === pairId && p.audio ? { ...p, audio: { ...p.audio, selectedStreamIndex: streamIndex } } : p,
+      ),
     })),
 
   removePair: (id) =>

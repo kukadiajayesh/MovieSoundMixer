@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
+import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
 import { enqueueJob, cancelJob, pauseQueue, resumeQueue, setConcurrency, Job } from './queue/jobQueue'
@@ -118,69 +119,6 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
     }
   })
 
-  // 5. Submit Extraction Job
-  ipcMain.handle(
-    'start-extraction',
-    async (
-      _event,
-      payload: {
-        id: string
-        inputPath: string
-        outFolder: string
-        format: 'copy' | 'mp3' | 'aac' | 'flac'
-        // 0-based position of the chosen stream within the file's AUDIO streams
-        // (i.e. the N in FFmpeg's "0:a:N" specifier), not the absolute stream index.
-        streamIdx: number
-        duration: number
-        overwrite?: boolean
-      },
-    ) => {
-      const { id, inputPath, outFolder, format, streamIdx, duration, overwrite } = payload
-
-      const inputCheck = validateInputFile(inputPath)
-      if (!inputCheck.valid) {
-        return { success: false, error: inputCheck.error }
-      }
-
-      const extName = format === 'copy' ? 'mka' : format
-      const baseName = path.parse(inputPath).name
-      let outPath = path.join(outFolder, `${baseName}_extracted.${extName}`)
-
-      const outCheck = validateOutputPath(outPath)
-      if (!outCheck.valid) {
-        return { success: false, error: outCheck.error }
-      }
-      outPath = resolveOutputPath(outPath, overwrite ?? false)
-
-      // Build FFmpeg extraction arguments
-      const args = ['-y', '-i', inputPath, '-map', `0:a:${Math.max(0, streamIdx)}`]
-
-      if (format === 'copy') {
-        args.push('-c:a', 'copy')
-      } else if (format === 'mp3') {
-        args.push('-c:a', 'libmp3lame', '-q:a', '2')
-      } else if (format === 'aac') {
-        args.push('-c:a', 'aac', '-b:a', '192k')
-      } else if (format === 'flac') {
-        args.push('-c:a', 'flac')
-      }
-
-      args.push(outPath)
-
-      const job: Job = {
-        id,
-        type: 'extract',
-        inputPath,
-        outputPath: outPath,
-        args,
-        duration,
-      }
-
-      enqueueJob(job)
-      return { success: true, outPath }
-    },
-  )
-
   // 6. Submit Merge Job
   ipcMain.handle(
     'start-merge',
@@ -190,6 +128,11 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         id: string
         videoPath: string
         audioPath: string
+        // Ordinal position (0-based) among audioPath's own audio streams —
+        // the "N" in FFmpeg's "1:a:N" — letting the audio source be a video
+        // (or any multi-track file) with a specific channel picked. Defaults
+        // to 0, matching the previous hardcoded "always take the first track".
+        audioStreamIndex?: number
         outContainer: string
         outFolder: string
         copyVideo: boolean
@@ -202,6 +145,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
     ) => {
       const { id, videoPath, audioPath, outContainer, outFolder, copyVideo, mergeMode, duration, overwrite } = payload
       const backend = payload.backend ?? 'auto'
+      const audioStreamIndex = Math.max(0, payload.audioStreamIndex ?? 0)
 
       for (const p of [videoPath, audioPath]) {
         const check = validateInputFile(p)
@@ -224,29 +168,48 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       if (backend === 'mkvmerge' && mkvPath === null) {
         return { success: false, error: 'mkvmerge backend requested but mkvmerge is not installed' }
       }
-      const useMkvMerge =
+      let useMkvMerge =
         backend === 'mkvmerge' ||
         (backend === 'auto' && outContainer === 'mkv' && mkvPath !== null)
 
       let args: string[] = []
+      // Options scoping `audioPath` down to exactly the chosen audio track —
+      // needed because it may now be a whole video (with its own video/
+      // subtitle/other-audio tracks) rather than a plain audio file.
+      let audioSourceOpts: string[] = []
+
+      if (useMkvMerge) {
+        // mkvmerge tracks are identified by its own per-file track IDs, not
+        // FFmpeg's absolute stream index, so translate the chosen ordinal via
+        // `mkvmerge -J` (works on any container mkvmerge can read, not just .mkv).
+        const audioTracks = (identifyMkv(audioPath) ?? []).filter((t) => t.type === 'audio')
+        if (audioTracks.length > 0) {
+          const track = audioTracks[Math.min(audioStreamIndex, audioTracks.length - 1)]
+          audioSourceOpts = ['--no-video', '--no-subtitles', '--audio-tracks', String(track.id)]
+        } else {
+          // Couldn't identify audioPath's tracks — don't risk an unscoped
+          // mkvmerge command pulling in a donor video's other tracks.
+          useMkvMerge = false
+        }
+      }
 
       // If exporting to MKV and mkvmerge is installed, use it!
       if (useMkvMerge) {
         if (mergeMode === 'replace') {
           // Replace: omit old audio tracks from source video
-          args = ['-o', outPath, '--no-audio', videoPath, audioPath]
+          args = ['-o', outPath, '--no-audio', videoPath, ...audioSourceOpts, audioPath]
         } else {
           // Keep secondary: append all tracks
-          args = ['-o', outPath, videoPath, audioPath]
+          args = ['-o', outPath, videoPath, ...audioSourceOpts, audioPath]
         }
       } else {
         // Fallback or default FFmpeg merging engine
         args = ['-y', '-i', videoPath, '-i', audioPath]
 
         if (mergeMode === 'replace') {
-          args.push('-map', '0:v:0', '-map', '1:a:0')
+          args.push('-map', '0:v:0', '-map', `1:a:${audioStreamIndex}`)
         } else {
-          args.push('-map', '0:v:0', '-map', '0:a:0', '-map', '1:a:0')
+          args.push('-map', '0:v:0', '-map', '0:a:0', '-map', `1:a:${audioStreamIndex}`)
         }
 
         if (copyVideo) {

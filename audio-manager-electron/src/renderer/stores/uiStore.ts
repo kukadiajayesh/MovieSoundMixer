@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type PageId = 'extract' | 'merge' | 'history' | 'showcase'
+export type PageId = 'merge' | 'history' | 'showcase'
 
 interface UIState {
   page: PageId
@@ -12,6 +12,6 @@ interface UIState {
  * so any component — e.g. the History "Re-run" action — can switch pages.
  */
 export const useUIStore = create<UIState>((set) => ({
-  page: 'extract',
+  page: 'merge',
   setPage: (page) => set({ page }),
 }))

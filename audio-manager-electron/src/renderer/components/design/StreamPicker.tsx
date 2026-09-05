@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
-import { AudioStream } from '../../stores/fileStore'
+import { AudioStream } from '../../stores/mergeStore'
 
 interface StreamPickerProps {
   streams: AudioStream[]
