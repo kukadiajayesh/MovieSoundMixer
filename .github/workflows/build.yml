@@ -1,0 +1,92 @@
+name: Build installers
+
+# FFmpeg Audio Manager (audio-manager-electron/) is an Electron + React app,
+# packaged with electron-builder. Unlike a frozen Python app, electron-builder
+# CAN cross-build both macOS architectures from a single Apple Silicon runner
+# (Xcode's toolchain + prebuilt native-module binaries make that possible) -
+# but the native sqlite3 module still needs the platform's own ABI, so
+# Windows and Linux each keep their own runner:
+#   Windows -> "FFmpeg Audio Manager Setup <version>.exe" (NSIS installer,
+#              lets the user pick the install directory) and
+#              "FFmpeg Audio Manager <version>.exe" (portable, no install)
+#   macOS   -> "FFmpeg Audio Manager-<version>.dmg" (Intel) and
+#              "FFmpeg Audio Manager-<version>-arm64.dmg" (Apple Silicon),
+#              both built on one macos-latest runner, plus matching .zips
+#   Linux   -> "FFmpeg Audio Manager-<version>.AppImage" (any modern glibc
+#              distro, no install needed) and a .deb for apt-based distros
+#
+# Builds are unsigned (see audio-manager-electron/PACKAGING.md) - macOS
+# Gatekeeper and Windows SmartScreen will warn on first launch until this is
+# set up with real Apple/Authenticode signing certificates.
+on:
+  push:
+    tags: ["v*"] # e.g. git tag v1.0.0 && git push --tags
+  workflow_dispatch: {} # also run manually from the Actions tab
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: audio-manager-electron
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest # Apple Silicon runner; builds both x64 + arm64 dmg/zip
+            name: macos
+          - os: ubuntu-22.04 # older glibc baseline = wider AppImage compatibility
+            name: linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # electron-builder stamps this version into the installer metadata and
+      # artifact filenames (e.g. "FFmpeg Audio Manager Setup 1.2.0.exe").
+      - name: Set package version from tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Build app + installer
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FFmpeg-Audio-Manager-${{ matrix.name }}
+          path: |
+            audio-manager-electron/release/*.exe
+            audio-manager-electron/release/*.dmg
+            audio-manager-electron/release/*.zip
+            audio-manager-electron/release/*.AppImage
+            audio-manager-electron/release/*.deb
+          if-no-files-found: ignore
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') # only on tag pushes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create a Release
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

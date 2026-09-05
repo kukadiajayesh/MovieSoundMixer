@@ -26,7 +26,9 @@ npx eslint . --fix
 We use Jest and React Testing Library for frontend tests, and Playwright for E2E testing (setup pending in future phases).
 
 ## Build
-To build for production:
+To build for production (packages an installer for the current OS):
 ```bash
 npm run build
 ```
+See [PACKAGING.md](PACKAGING.md) for per-OS installer details and the CI
+workflow that builds Windows/macOS/Linux installers together.

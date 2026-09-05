@@ -4,8 +4,17 @@ import { execSync } from 'child_process'
 // Resolve ffmpeg binary path
 export function getFFmpegPath(): string {
   try {
-    // Attempt to load pre-bundled ffmpeg-static
-    const ffmpegStatic = require('ffmpeg-static')
+    // Attempt to load pre-bundled ffmpeg-static. Its path is computed via
+    // __dirname, so when packaged it points inside app.asar - but the binary
+    // can't be spawned from inside the asar archive. asarUnpack (see
+    // package.json's build.asarUnpack) extracts the real file alongside the
+    // archive under app.asar.unpacked; redirect the path there. This is a
+    // no-op string replace in dev / unpackaged runs, where the path never
+    // contains "app.asar" at all.
+    const ffmpegStatic = (require('ffmpeg-static') as string | null)?.replace(
+      'app.asar',
+      'app.asar.unpacked',
+    )
     if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
       return ffmpegStatic
     }
