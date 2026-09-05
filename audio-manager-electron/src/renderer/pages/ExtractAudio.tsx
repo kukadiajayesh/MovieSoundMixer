@@ -195,9 +195,8 @@ export const ExtractAudio: React.FC = () => {
     updateSetting('output_directory', outputDir)
     updateSetting('default_format', format)
 
-    // Extract has no batch control of its own; run at the queue's default
-    // parallelism so a prior Merge run can't leave it stuck sequential.
-    await window.electron.ipcRenderer.invoke('set-concurrency', 2).catch(() => {})
+    // Run at a concurrency of 1 to process only a single entry at a time
+    await window.electron.ipcRenderer.invoke('set-concurrency', 1).catch(() => {})
 
     useJobStore.getState().startRun(targets.map((f) => ({ id: f.id, name: f.name })))
     useJobStore.getState().addLog(`Started extract job: ${targets.length} file(s) → ${format.toUpperCase()}`)

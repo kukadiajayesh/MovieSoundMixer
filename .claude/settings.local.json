@@ -5,5 +5,9 @@
       "Bash(npx tsc *)",
       "Bash(echo \"EXIT: $?\")"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "code-review-graph"
+  ],
+  "enableAllProjectMcpServers": true
 }

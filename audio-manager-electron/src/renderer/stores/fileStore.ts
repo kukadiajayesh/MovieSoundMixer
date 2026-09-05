@@ -7,6 +7,7 @@ export interface AudioStream {
   channels: number
   title?: string
   bitrate?: string
+  isDefault?: boolean
 }
 
 export interface FileEntry {
@@ -45,13 +46,30 @@ export const useFileStore = create<FileState>((set) => ({
 
   addFiles: (newFiles) =>
     set((state) => {
-      const formattedFiles: FileEntry[] = newFiles.map((f) => ({
-        ...f,
-        id: `file-${Math.random().toString(36).substring(2, 9)}`,
-        selectedStreamIndex: f.streams.length > 0 ? f.streams[0].index : 0,
-        status: 'ready',
-        progress: 0,
-      }))
+      const formattedFiles: FileEntry[] = newFiles.map((f) => {
+        let bestIndex = f.streams.length > 0 ? f.streams[0].index : 0
+        if (f.streams.length > 0) {
+          const preferredKeywords = ['hid', 'hindi', 'hin', 'hind']
+          const matchesKeyword = (s: (typeof f.streams)[number]) =>
+            preferredKeywords.some(
+              (kw) => s.language?.toLowerCase().includes(kw) || s.title?.toLowerCase().includes(kw),
+            )
+          const preferredDefault = f.streams.find((s) => s.isDefault && matchesKeyword(s))
+          const preferredMatch = preferredDefault ?? f.streams.find(matchesKeyword)
+          const anyDefault = f.streams.find((s) => s.isDefault)
+          const chosen = preferredMatch ?? anyDefault
+          if (chosen) {
+            bestIndex = chosen.index
+          }
+        }
+        return {
+          ...f,
+          id: `file-${Math.random().toString(36).substring(2, 9)}`,
+          selectedStreamIndex: bestIndex,
+          status: 'ready',
+          progress: 0,
+        }
+      })
       // Filter out duplicates by path
       const filteredFiles = formattedFiles.filter(
         (nf) => !state.files.some((f) => f.path === nf.path),

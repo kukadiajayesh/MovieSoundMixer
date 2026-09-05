@@ -57,10 +57,6 @@ export const MergeAudio: React.FC = () => {
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
   const [assigning, setAssigning] = useState<string | null>(null)
 
-  const cpuCount = navigator.hardwareConcurrency || 4
-  const [batch, setBatch] = useState(false)
-  const [processes, setProcesses] = useState(Math.min(2, cpuCount))
-
   useEffect(() => {
     window.electron?.ipcRenderer
       ?.invoke('get-dependency-status')
@@ -160,9 +156,9 @@ export const MergeAudio: React.FC = () => {
       return
     }
 
-    // Apply the batch-processing choice to the shared queue for this run.
+    // Process only single entry
     await window.electron.ipcRenderer
-      .invoke('set-concurrency', batch ? processes : 1)
+      .invoke('set-concurrency', 1)
       .catch(() => {})
 
     useJobStore.getState().startRun(targets.map((p) => ({ id: p.id, name: p.video.name })))
@@ -450,29 +446,6 @@ export const MergeAudio: React.FC = () => {
               </label>
             ))}
           </div>
-        </div>
-
-        <div className="card">
-          <div className="card-head">
-            <Icon name="cpu" />
-            <span>Batch Processing</span>
-            <span className={`badge ${batch ? 'on' : ''}`}>{batch ? `${processes}×` : 'OFF'}</span>
-          </div>
-          <Switch on={batch} onChange={setBatch} label="Run jobs in parallel" />
-          {batch && (
-            <div className="field">
-              <label>Concurrent processes (system: {cpuCount} cores)</label>
-              <input
-                type="number"
-                min={1}
-                max={cpuCount}
-                value={processes}
-                onChange={(e) =>
-                  setProcesses(Math.max(1, Math.min(cpuCount, parseInt(e.target.value, 10) || 1)))
-                }
-              />
-            </div>
-          )}
         </div>
       </div>
 

@@ -8,6 +8,7 @@ export interface AudioStreamInfo {
   channels: number
   title?: string
   bitrate?: string
+  isDefault?: boolean
 }
 
 export interface ProbeResult {
@@ -85,12 +86,15 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
             const bitrateMatch = line.match(/(\d+)\s*kb\/s/i)
             const bitrate = bitrateMatch ? `${bitrateMatch[1]}k` : undefined
 
+            const isDefault = line.toLowerCase().includes('(default)')
+
             streams.push({
               index,
               language,
               codec,
               channels,
               bitrate,
+              isDefault,
             })
             currentAudioArrayIdx = streams.length - 1
           } else if (anyStreamRegex.test(line)) {
