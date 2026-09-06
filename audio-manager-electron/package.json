@@ -18,7 +18,11 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": {
+    "name": "Kukadia Jayesh",
+    "email": "kukadia.jayesh@gmail.com"
+  },
+  "homepage": "https://github.com/kukadiajayesh/MovieSoundMixer",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
@@ -98,7 +102,8 @@
         "deb"
       ],
       "icon": "assets/icon.png",
-      "category": "AudioVideo"
+      "category": "AudioVideo",
+      "maintainer": "Kukadia Jayesh <kukadia.jayesh@gmail.com>"
     }
   },
   "dependencies": {
