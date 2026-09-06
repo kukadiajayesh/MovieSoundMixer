@@ -333,21 +333,23 @@ export const MergeAudio: React.FC = () => {
       </div>
 
       {pairs.length === 0 ? (
-        <Dropzone
-          title="Drop videos and audio files"
-          sub="Files are paired automatically by episode number"
-          kind="folder"
-          onAddFiles={() => handleAddFiles()}
-          onAddFolder={handleAddFolder}
-          onDropFiles={handleDropFiles}
-        />
+        <div className="dropzone-stage">
+          <Dropzone
+            title="Drop videos and audio files"
+            sub="Files are paired automatically by episode number"
+            kind="folder"
+            onAddFiles={() => handleAddFiles()}
+            onAddFolder={handleAddFolder}
+            onDropFiles={handleDropFiles}
+          />
+        </div>
       ) : (
         <>
           {!running && (
             <Dropzone
               slim
-              title="Drag more files"
-              sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode`}
+              title="Drop videos and audio files"
+              sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode — drag more in, or drop here`}
               kind="folder"
               onAddFiles={() => handleAddFiles()}
               onAddFolder={handleAddFolder}
@@ -406,7 +408,7 @@ export const MergeAudio: React.FC = () => {
                       setAssigning(p.id)
                       handleAddFiles(p.id)
                     }}
-                    title="Click to choose a different audio or video file"
+                    data-tip="Click to choose a different audio or video file"
                   >
                     {p.audio ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -425,7 +427,7 @@ export const MergeAudio: React.FC = () => {
                                 e.stopPropagation()
                                 setChannelPicker({ pairId: p.id, audio: p.audio!, anchor: e.currentTarget })
                               }}
-                              title="Click to choose a different audio channel"
+                              data-tip="Click to choose a different audio channel"
                             >
                               <span className="badge">{picked.codec.toUpperCase()}</span>
                               {picked.language && <span className="lang">{picked.language.toUpperCase()}</span>}
@@ -452,7 +454,8 @@ export const MergeAudio: React.FC = () => {
                     {p.status === 'success' && p.outputPath && (
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Open merged file"
+                        aria-label="Open merged file"
+                        data-tip="Open merged file"
                         onClick={() => openOutput(p.outputPath!)}
                       >
                         <Icon name="play" />
@@ -461,7 +464,8 @@ export const MergeAudio: React.FC = () => {
                     {p.status === 'error' && (
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Retry this file"
+                        aria-label="Retry this file"
+                        data-tip="Retry this file"
                         onClick={() => handleRetryPair(p.id)}
                       >
                         <Icon name="retry" />
@@ -470,7 +474,8 @@ export const MergeAudio: React.FC = () => {
                     {p.status === 'processing' ? (
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Cancel this file"
+                        aria-label="Cancel this file"
+                        data-tip="Cancel this file"
                         onClick={() => handleCancelPair(p.id)}
                       >
                         <Icon name="stop" />
@@ -478,7 +483,8 @@ export const MergeAudio: React.FC = () => {
                     ) : (
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Remove this file"
+                        aria-label="Remove this file"
+                        data-tip="Remove this file"
                         onClick={() => handleRemovePair(p.id)}
                       >
                         <Icon name="close" />
@@ -493,7 +499,8 @@ export const MergeAudio: React.FC = () => {
         </div>
       )}
 
-      {/* Merge settings cards */}
+      {/* Merge settings cards — hidden until at least one file is picked */}
+      {pairs.length > 0 && (
       <div className="cards">
         <div className="card">
           <div className="card-head">
@@ -595,6 +602,7 @@ export const MergeAudio: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {channelPicker && (
         <StreamPicker

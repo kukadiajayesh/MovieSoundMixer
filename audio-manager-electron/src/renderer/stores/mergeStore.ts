@@ -127,3 +127,6 @@ export const useMergeStore = create<MergeState>((set) => ({
       pairs: state.pairs.map((p) => (p.id === id ? { ...p, progress } : p)),
     })),
 }))
+
+// TEMP DEBUG EXPOSE — remove before commit
+;(window as any).__mergeStore = useMergeStore

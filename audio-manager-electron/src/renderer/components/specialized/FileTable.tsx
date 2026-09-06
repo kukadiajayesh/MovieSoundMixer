@@ -124,7 +124,8 @@ export const FileTable: React.FC<FileTableProps> = ({
                     fontSize: '14px',
                     padding: '4px',
                   }}
-                  title="Remove file"
+                  aria-label="Remove file"
+                  data-tip="Remove file"
                 >
                   ✕
                 </button>

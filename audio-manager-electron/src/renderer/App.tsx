@@ -3,6 +3,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { useUIStore } from './stores/uiStore'
 import { LogDrawer } from './components/design/LogDrawer'
 import { ToastHost } from './components/design/Toasts'
+import { TooltipHost } from './components/design/TooltipHost'
 import { MergeAudio } from './pages/MergeAudio'
 import { History } from './pages/History'
 import { ComponentShowcase } from './pages/ComponentShowcase'
@@ -96,6 +97,7 @@ export default function App() {
 
         <LogDrawer />
       </div>
+      <TooltipHost />
     </ToastHost>
   )
 }

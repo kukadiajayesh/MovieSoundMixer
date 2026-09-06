@@ -324,6 +324,22 @@ body {
 .dropzone.slim .dz-icon { width: 36px; height: 36px; border-radius: 8px; }
 .dropzone.slim .dz-icon .ico { width: 16px; height: 16px; }
 
+/* Empty-state wrapper: centers the (sole) dropzone in the remaining page
+   space instead of letting it hug the top with dead space below it. */
+.dropzone-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.dropzone-stage .dropzone {
+  width: 100%;
+  max-width: 560px;
+  margin: 0;
+}
+
 /* ─── Toolbar ────────────────────────────────────────────────────────── */
 .toolbar {
   display: flex;
@@ -922,6 +938,37 @@ body {
 .toast.ok { border-left-color: var(--ok); }
 .toast.error { border-left-color: var(--danger); }
 .toast .ico { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* ─── Tooltip ────────────────────────────────────────────────────────── */
+.app-tooltip {
+  position: fixed;
+  z-index: 200;
+  transform: translate(-50%, -100%);
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+  padding: 5px 9px;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  max-width: 260px;
+  pointer-events: none;
+  animation: tipIn 0.1s ease-out;
+}
+.app-tooltip.bottom { transform: translate(-50%, 0); }
+@keyframes tipIn {
+  from { opacity: 0; transform: translate(-50%, -95%); }
+  to { opacity: 1; transform: translate(-50%, -100%); }
+}
+.app-tooltip.bottom {
+  animation-name: tipInDown;
+}
+@keyframes tipInDown {
+  from { opacity: 0; transform: translate(-50%, -5%); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 .toast.ok .ico { color: var(--ok); }
 .toast.error .ico { color: var(--danger); }
 .toast .body { flex: 1; }

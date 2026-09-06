@@ -70,7 +70,8 @@ export const LogViewer: React.FC<LogViewerProps> = ({
                 fontSize: '10px',
                 padding: '2px 6px',
               }}
-              title="Copy all logs"
+              aria-label="Copy all logs"
+              data-tip="Copy all logs"
             >
               Copy
             </button>
@@ -85,7 +86,8 @@ export const LogViewer: React.FC<LogViewerProps> = ({
               fontSize: '10px',
               padding: '2px 6px',
             }}
-            title="Clear logs"
+            aria-label="Clear logs"
+            data-tip="Clear logs"
           >
             Clear
           </button>

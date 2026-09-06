@@ -126,12 +126,18 @@ export const History: React.FC = () => {
                   className="btn btn-sm"
                   onClick={() => handleRerun(h)}
                   disabled={!h.inputPath}
-                  title={h.inputPath ? 'Re-queue this run' : 'Source path not recorded'}
+                  aria-label={h.inputPath ? 'Re-queue this run' : 'Source path not recorded'}
+                  data-tip={h.inputPath ? 'Re-queue this run' : 'Source path not recorded'}
                 >
                   <Icon name="play" />
                   Re-run
                 </button>
-                <button className="btn btn-sm" onClick={() => removeHistoryItem(h.id)} title="Remove entry">
+                <button
+                  className="btn btn-sm"
+                  onClick={() => removeHistoryItem(h.id)}
+                  aria-label="Remove entry"
+                  data-tip="Remove entry"
+                >
                   <Icon name="close" />
                 </button>
               </div>

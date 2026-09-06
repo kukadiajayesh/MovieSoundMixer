@@ -40,7 +40,7 @@ export const StatusCell: React.FC<{ status: RowStatus; progress?: number; error?
     return (
       <div className="status error">
         <span className="dot" />
-        <span title={error}>{error || 'Error'}</span>
+        <span aria-label={error} data-tip={error}>{error || 'Error'}</span>
       </div>
     )
   }

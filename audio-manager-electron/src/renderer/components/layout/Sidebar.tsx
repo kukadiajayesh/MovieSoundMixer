@@ -67,7 +67,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </nav>
       <div className="sb-theme">
-        <button className="sb-theme-btn" onClick={cycleTheme} title="Click to change theme (Auto → Light → Dark)">
+        <button
+          className="sb-theme-btn"
+          onClick={cycleTheme}
+          aria-label="Click to change theme (Auto → Light → Dark)"
+          data-tip="Click to change theme (Auto → Light → Dark)"
+        >
           <Icon name={themeIcon} />
           <span>{themeLabel}</span>
         </button>
