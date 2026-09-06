@@ -40,7 +40,7 @@ export default function App() {
       <div className="app">
         <div className="titlebar">
           <div className="tl-left-spacer" style={{ width: '200px' }}></div>
-          <div className="tl-title">FFmpeg Audio Manager{version ? ` — v${version}` : ''}</div>
+          <div className="tl-title"></div>
           <div className="tl-spacer" />
         </div>
 
