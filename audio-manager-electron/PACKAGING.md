@@ -53,14 +53,17 @@ Icons live in `assets/` (`icon.ico` for Windows, `icon.icns` for macOS,
 
 ## CI builds for all platforms
 
-Push a tag and GitHub Actions builds the Windows installer, both macOS
-dmgs, and the Linux AppImage/deb, then **publishes them all to a GitHub
-Release** (auto-generated release notes):
+GitHub Actions can build the installers and publish/attach them to a release automatically in two ways:
 
-```bash
-git tag v1.2.0
-git push --tags
-```
+1. **Pushing a Git Tag:**
+   ```bash
+   git tag v1.2.0
+   git push --tags
+   ```
+   This triggers the build and automatically creates a new GitHub Release with the build artifacts.
+
+2. **Publishing a GitHub Release:**
+   Creating and publishing a release directly from the GitHub UI will also automatically trigger the build workflow, which packages the application and attaches the resulting installers to that release.
 
 The tag (`v1.2.0` → `1.2.0`) is written into `audio-manager-electron`'s
 `package.json` before packaging, so it's what electron-builder stamps into

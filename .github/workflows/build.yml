@@ -21,7 +21,13 @@ name: Build installers
 on:
   push:
     tags: ["v*"] # e.g. git tag v1.0.0 && git push --tags
+  release:
+    types: [published]
   workflow_dispatch: {} # also run manually from the Actions tab
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
