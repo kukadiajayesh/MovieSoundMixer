@@ -719,6 +719,15 @@ body {
 .log-line .tag.cmd   { color: var(--fg-4); }
 .log-line .msg { color: var(--fg-2); white-space: pre-wrap; word-break: break-word; }
 .log-line.cmd .msg { color: var(--fg-3); }
+.log-line .repeat-count {
+  flex-shrink: 0;
+  color: var(--fg-4);
+  background: var(--bg-2);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
 
 /* ─── Cards (settings) ───────────────────────────────────────────────── */
 .cards {
