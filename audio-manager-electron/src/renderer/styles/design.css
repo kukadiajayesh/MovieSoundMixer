@@ -169,8 +169,31 @@ body {
 .sb-item.active .count { background: var(--accent); color: white; }
 
 /* Status panel at bottom of sidebar */
-.sb-status {
+/* Theme switch (Auto/Light/Dark), pinned above the status panel at the
+   bottom of the sidebar. No left/right inset — the button runs edge-to-edge
+   — and it sits 8px higher than flush, clear of the status panel below it. */
+.sb-theme {
   margin-top: auto;
+  padding: 0;
+  margin-bottom: 8px;
+}
+.sb-theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sb-theme-btn:hover { background: var(--bg-hover); color: var(--fg); }
+.sb-theme-btn .ico { width: 14px; height: 14px; flex-shrink: 0; }
+
+.sb-status {
   padding: 12px 14px;
   border-top: 1px solid var(--line);
   background: var(--bg-2);
@@ -199,6 +222,15 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg);
+}
+/* Wraps a page's scrollable body so a sticky footer (e.g. RunFooter) stays
+   full-width and fixed in place while only this content area scrolls. */
+.page-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }
 .page-head {
   padding: 18px 24px 14px;
@@ -394,7 +426,8 @@ body {
 .col-meta { width: 120px; color: var(--fg-3); font-size: 11px; }
 .col-stream { width: 220px; }
 .col-status { width: 180px; }
-.col-actions { width: 76px; text-align: right; white-space: nowrap; }
+.col-actions { width: 104px; text-align: right; white-space: nowrap; overflow: visible; text-overflow: clip; }
+.row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; }
 
 .fname { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fname .ext {
@@ -695,6 +728,12 @@ body {
   font-weight: 600;
 }
 .card-head .ico { width: 14px; height: 14px; color: var(--fg-3); }
+.card-head .ico-glow {
+  filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+}
+.card-head .ico-glow-accent { color: var(--accent); }
+.card-head .ico-glow-warn { color: var(--warn); }
+.card-head .ico-glow-ok { color: var(--ok); }
 .card-head .badge {
   margin-left: auto;
   font-size: 10px;
@@ -707,6 +746,14 @@ body {
   background: oklch(from var(--ok) l c h / 0.2);
   color: var(--ok);
 }
+.card-head .switch {
+  margin-left: auto;
+}
+.switch-desc {
+  font-size: 11px;
+  color: var(--fg-3);
+  margin-top: -2px;
+}
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: 11px; color: var(--fg-3); }
 .field select, .field input[type="text"], .field input[type="number"] {
@@ -718,8 +765,28 @@ body {
   font-size: 12px;
   font-family: inherit;
 }
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-3) 50%),
+    linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) center,
+    calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
 .field select:focus, .field input:focus {
   outline: none; border-color: var(--accent);
+}
+.field select:disabled, .field input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.field.is-disabled label {
+  opacity: 0.5;
 }
 
 /* Segmented control */
@@ -748,6 +815,12 @@ body {
   color: var(--fg);
   box-shadow: var(--shadow-1);
 }
+.seg button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.seg button:disabled:hover { color: var(--fg-2); }
+.seg button:disabled.on { color: var(--fg); }
 
 /* Switch */
 .switch {

@@ -3,7 +3,6 @@ import { Sidebar } from './components/layout/Sidebar'
 import { useUIStore } from './stores/uiStore'
 import { LogDrawer } from './components/design/LogDrawer'
 import { ToastHost } from './components/design/Toasts'
-import { Icon } from './components/design/Icon'
 import { MergeAudio } from './pages/MergeAudio'
 import { History } from './pages/History'
 import { ComponentShowcase } from './pages/ComponentShowcase'
@@ -23,7 +22,7 @@ export default function App() {
     gpuCount: 0,
   })
 
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   useIPC()
 
   useEffect(() => {
@@ -79,17 +78,7 @@ export default function App() {
         <div className="titlebar">
           <div className="tl-left-spacer" style={{ width: '200px' }}></div>
           <div className="tl-title">FFmpeg Audio Manager{version ? ` — v${version}` : ''}</div>
-          <div className="tl-spacer">
-            <div className="tl-actions">
-              <button
-                className="btn btn-ghost btn-sm"
-                title="Toggle light/dark theme"
-                onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              >
-                <Icon name={resolvedTheme === 'dark' ? 'sun' : 'moon'} />
-              </button>
-            </div>
-          </div>
+          <div className="tl-spacer" />
         </div>
 
         <Sidebar
@@ -99,6 +88,8 @@ export default function App() {
           mkvmergeAvailable={deps.mkvmergeAvailable}
           gpuActive={deps.gpuActive}
           gpuCount={deps.gpuCount}
+          theme={theme}
+          onSetTheme={setTheme}
         />
 
         <main className="main">{renderActivePage()}</main>

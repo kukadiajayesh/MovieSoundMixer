@@ -8,7 +8,7 @@ export interface SettingSchema {
 export const SETTINGS_SCHEMA: Record<string, SettingSchema> = {
   output_directory: { default: '', validate: (v) => typeof v === 'string' && v.length > 0 },
   default_format: { default: 'copy', validate: (v) => ['copy', 'mp3', 'aac', 'flac'].includes(v) },
-  gpu_enabled: { default: 'true', validate: (v) => v === 'true' || v === 'false' },
+  gpu_enabled: { default: 'false', validate: (v) => v === 'true' || v === 'false' },
   theme: { default: 'system', validate: (v) => ['system', 'light', 'dark'].includes(v) },
   auto_update: { default: 'true', validate: (v) => v === 'true' || v === 'false' },
 }

@@ -56,6 +56,7 @@ export const MergeAudio: React.FC = () => {
   const [backend, setBackend] = useState<Backend>('auto')
   const [quality, setQuality] = useState<Quality>('balanced')
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
+  const [encoder, setEncoder] = useState<string>('') // '' = auto-pick best
   const [assigning, setAssigning] = useState<string | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
@@ -170,6 +171,65 @@ export const MergeAudio: React.FC = () => {
   }
 
   // ── Run / stop ────────────────────────────────────────────────────
+  // Enqueues the backend job for one already-matched pair. Shared by the
+  // batch run below and by a single-row retry, so both paths stay in sync.
+  const runPair = async (p: MergePair) => {
+    if (!window.electron?.ipcRenderer) return
+    try {
+      // Probe the video duration so FFmpeg progress can be mapped to %
+      let duration = 0
+      try {
+        const probe = await window.electron.ipcRenderer.invoke('probe-streams', p.video.path)
+        if (probe?.success) duration = probe.duration
+      } catch {
+        /* progress will just be indeterminate */
+      }
+
+      // FFmpeg maps audio by ordinal (a:N) — translate the absolute stream
+      // index picked in the channel popover, same convention as Extract Audio.
+      const audioStreamIndex = Math.max(
+        0,
+        (p.audio!.streams ?? []).findIndex((s) => s.index === p.audio!.selectedStreamIndex),
+      )
+
+      // The actual pipeline is a single pass: the chosen audio track is
+      // selected from the source audio file and muxed directly onto the
+      // target video's stream(s) in one ffmpeg/mkvmerge invocation — there
+      // is no separate "extract to a temp file" step. Log that plainly so
+      // the job log reflects what really happens rather than implying a
+      // two-step extract-then-append.
+      useJobStore
+        .getState()
+        .addLog(
+          `${p.video.name}: selecting audio track #${audioStreamIndex} from "${p.audio!.name}" and muxing it directly onto "${p.video.name}" (single-pass, no intermediate extract step)`,
+        )
+
+      const res = await window.electron.ipcRenderer.invoke('start-merge', {
+        id: p.id,
+        videoPath: p.video.path,
+        audioPath: p.audio!.path,
+        audioStreamIndex,
+        outContainer: container,
+        outFolder: outputDir,
+        copyVideo,
+        mergeMode,
+        duration,
+        backend,
+        quality,
+        encoder: encoder || undefined,
+      })
+      if (!res?.success) {
+        useMergeStore.getState().updatePairStatus(p.id, 'error', res?.error || 'Failed to enqueue')
+        useJobStore.getState().finishJob(p.id, false)
+        useJobStore.getState().addLog(`${p.video.name}: ${res?.error || 'failed to enqueue'}`, 'error')
+      }
+    } catch (err: any) {
+      useMergeStore.getState().updatePairStatus(p.id, 'error', 'Failed')
+      useJobStore.getState().finishJob(p.id, false)
+      useJobStore.getState().addLog(`Failed to start ${p.video.name}: ${err.message}`, 'error')
+    }
+  }
+
   const handleRun = async () => {
     const targets = pairs.filter((p) => p.audio && p.status !== 'processing')
     if (targets.length === 0) {
@@ -192,47 +252,27 @@ export const MergeAudio: React.FC = () => {
       .addLog(`Started merge job: ${targets.length} pair(s) → ${container.toUpperCase()} via ${backend}`)
 
     for (const p of targets) {
-      try {
-        // Probe the video duration so FFmpeg progress can be mapped to %
-        let duration = 0
-        try {
-          const probe = await window.electron.ipcRenderer.invoke('probe-streams', p.video.path)
-          if (probe?.success) duration = probe.duration
-        } catch {
-          /* progress will just be indeterminate */
-        }
-
-        // FFmpeg maps audio by ordinal (a:N) — translate the absolute stream
-        // index picked in the channel popover, same convention as Extract Audio.
-        const audioStreamIndex = Math.max(
-          0,
-          (p.audio!.streams ?? []).findIndex((s) => s.index === p.audio!.selectedStreamIndex),
-        )
-
-        const res = await window.electron.ipcRenderer.invoke('start-merge', {
-          id: p.id,
-          videoPath: p.video.path,
-          audioPath: p.audio!.path,
-          audioStreamIndex,
-          outContainer: container,
-          outFolder: outputDir,
-          copyVideo,
-          mergeMode,
-          duration,
-          backend,
-          quality,
-        })
-        if (!res?.success) {
-          useMergeStore.getState().updatePairStatus(p.id, 'error', res?.error || 'Failed to enqueue')
-          useJobStore.getState().finishJob(p.id, false)
-          useJobStore.getState().addLog(`${p.video.name}: ${res?.error || 'failed to enqueue'}`, 'error')
-        }
-      } catch (err: any) {
-        useMergeStore.getState().updatePairStatus(p.id, 'error', 'Failed')
-        useJobStore.getState().finishJob(p.id, false)
-        useJobStore.getState().addLog(`Failed to start ${p.video.name}: ${err.message}`, 'error')
-      }
+      await runPair(p)
     }
+  }
+
+  // Restart a single row that ended in error — including one the user
+  // cancelled mid-progress, which lands here too since a cancel resolves to
+  // an error status. Re-enqueues just that pair without touching the others,
+  // folding into an active batch if one is still running (see retryJob).
+  const handleRetryPair = async (id: string) => {
+    const p = pairs.find((pr) => pr.id === id)
+    if (!p || !p.audio) return
+    if (!window.electron?.ipcRenderer) {
+      toast({ kind: 'error', title: 'Merging requires the Electron shell' })
+      return
+    }
+    useMergeStore.getState().updatePairStatus(id, 'ready')
+    useMergeStore.getState().updatePairProgress(id, 0)
+    await window.electron.ipcRenderer.invoke('set-concurrency', 1).catch(() => {})
+    useJobStore.getState().retryJob({ id: p.id, name: p.video.name })
+    useJobStore.getState().addLog(`Retrying merge: ${p.video.name}`)
+    await runPair(p)
   }
 
   const openOutput = async (outputPath: string) => {
@@ -275,6 +315,7 @@ export const MergeAudio: React.FC = () => {
 
   return (
     <>
+      <div className="page-scroll">
       <div className="page-head">
         <div>
           <h1 className="ph-title">Merge Audio</h1>
@@ -407,6 +448,7 @@ export const MergeAudio: React.FC = () => {
                     <StatusCell status={toRowStatus(p.status)} progress={p.progress} error={p.error} />
                   </td>
                   <td className="col-actions">
+                    <div className="row-actions">
                     {p.status === 'success' && p.outputPath && (
                       <button
                         className="btn btn-ghost btn-sm"
@@ -414,6 +456,15 @@ export const MergeAudio: React.FC = () => {
                         onClick={() => openOutput(p.outputPath!)}
                       >
                         <Icon name="play" />
+                      </button>
+                    )}
+                    {p.status === 'error' && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Retry this file"
+                        onClick={() => handleRetryPair(p.id)}
+                      >
+                        <Icon name="retry" />
                       </button>
                     )}
                     {p.status === 'processing' ? (
@@ -433,6 +484,7 @@ export const MergeAudio: React.FC = () => {
                         <Icon name="close" />
                       </button>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -445,48 +497,50 @@ export const MergeAudio: React.FC = () => {
       <div className="cards">
         <div className="card">
           <div className="card-head">
-            <Icon name="zap" />
+            <Icon name="zap" className={`ico ${gpuEnabled ? 'ico-glow ico-glow-accent' : ''}`} />
             <span>GPU Acceleration</span>
-            <span className={`badge ${gpuEnabled ? 'on' : ''}`}>{gpuEnabled ? 'ON' : 'OFF'}</span>
+            <Switch on={gpuEnabled} onChange={(v) => updateSetting('gpu_enabled', String(v))} label="" />
           </div>
-          <Switch
-            on={gpuEnabled}
-            onChange={(v) => updateSetting('gpu_enabled', String(v))}
-            label={gpuEnabled ? 'Hardware encoding (re-encodes video)' : 'Copy video stream (no re-encode, fastest)'}
-          />
-          {gpuEnabled && (
-            <>
-              <div className="field">
-                <label>
-                  {gpuEncoders.length > 0
-                    ? `Encoder (${gpuEncoders.length} detected — best is picked automatically)`
-                    : 'No GPU encoders detected — CPU libx264 will be used'}
-                </label>
-                {gpuEncoders.length > 0 && (
-                  <select value={gpuEncoders[0]} disabled>
-                    {gpuEncoders.map((e) => (
-                      <option key={e}>{e}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="field">
-                <label>Quality (used when re-encoding)</label>
-                <div className="seg">
-                  {(['fast', 'balanced', 'quality'] as Quality[]).map((q) => (
-                    <button key={q} className={quality === q ? 'on' : ''} onClick={() => setQuality(q)}>
-                      {q[0].toUpperCase() + q.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          <div className="switch-desc">
+            {gpuEnabled ? 'Hardware encoding (re-encodes video)' : 'Copy video stream (no re-encode, fastest)'}
+          </div>
+          <div className={`field ${!gpuEnabled ? 'is-disabled' : ''}`}>
+            <label>
+              {gpuEncoders.length > 0
+                ? `Encoder (${gpuEncoders.length} detected)`
+                : 'No GPU encoders detected — CPU libx264 will be used'}
+            </label>
+            {gpuEncoders.length > 0 && (
+              <select value={encoder} onChange={(e) => setEncoder(e.target.value)} disabled={!gpuEnabled}>
+                <option value="">Auto (best available)</option>
+                {gpuEncoders.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className={`field ${!gpuEnabled ? 'is-disabled' : ''}`}>
+            <label>Quality (used when re-encoding)</label>
+            <div className="seg">
+              {(['fast', 'balanced', 'quality'] as Quality[]).map((q) => (
+                <button
+                  key={q}
+                  className={quality === q ? 'on' : ''}
+                  disabled={!gpuEnabled}
+                  onClick={() => setQuality(q)}
+                >
+                  {q[0].toUpperCase() + q.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="card">
           <div className="card-head">
-            <Icon name="layers" />
+            <Icon name="layers" className="ico ico-glow ico-glow-warn" />
             <span>Merge Backend</span>
           </div>
           <div>
@@ -510,7 +564,7 @@ export const MergeAudio: React.FC = () => {
 
         <div className="card">
           <div className="card-head">
-            <Icon name="cpu" />
+            <Icon name="cpu" className="ico ico-glow ico-glow-ok" />
             <span>Output</span>
           </div>
           <div className="field">
@@ -551,6 +605,7 @@ export const MergeAudio: React.FC = () => {
           onClose={() => setChannelPicker(null)}
         />
       )}
+      </div>
 
       <RunFooter
         outputDir={outputDir}

@@ -14,7 +14,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set) => ({
   outputDirectory: 'C:/Users/Downloads/Audio_Extracted',
   defaultFormat: 'copy',
-  gpuEnabled: true,
+  gpuEnabled: false,
   theme: 'system',
   autoUpdate: true,
 

@@ -126,7 +126,7 @@ function seedDefaultSettings(): Promise<void> {
   const defaultSettings = [
     { key: 'output_directory', value: downloadsPath },
     { key: 'default_format', value: 'copy' },
-    { key: 'gpu_enabled', value: 'true' },
+    { key: 'gpu_enabled', value: 'false' },
     { key: 'theme', value: 'system' },
     { key: 'auto_update', value: 'true' },
   ]

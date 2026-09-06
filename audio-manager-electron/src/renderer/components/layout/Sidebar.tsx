@@ -5,6 +5,8 @@ import { useHistoryStore } from '../../stores/historyStore'
 
 export type PageId = 'merge' | 'history' | 'showcase'
 
+export type ThemeChoice = 'system' | 'light' | 'dark'
+
 export interface SidebarProps {
   activePage: PageId
   onPageChange: (page: PageId) => void
@@ -12,6 +14,16 @@ export interface SidebarProps {
   mkvmergeAvailable?: boolean
   gpuActive?: boolean
   gpuCount?: number
+  theme?: ThemeChoice
+  onSetTheme?: (theme: ThemeChoice) => void
+}
+
+// Click cycles through the three modes in this order.
+const THEME_CYCLE: ThemeChoice[] = ['system', 'light', 'dark']
+const THEME_META: Record<ThemeChoice, { label: string; icon: IconName }> = {
+  system: { label: 'Auto', icon: 'auto' },
+  light: { label: 'Light', icon: 'sun' },
+  dark: { label: 'Dark', icon: 'moon' },
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -21,9 +33,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mkvmergeAvailable = false,
   gpuActive = false,
   gpuCount = 0,
+  theme = 'system',
+  onSetTheme,
 }) => {
   const mergeCount = useMergeStore((s) => s.pairs.length)
   const historyCount = useHistoryStore((s) => s.history.length)
+
+  const cycleTheme = () => {
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length]
+    onSetTheme?.(next)
+  }
+  const { label: themeLabel, icon: themeIcon } = THEME_META[theme]
 
   const items: Array<{ id: PageId; label: string; icon: IconName; count: number }> = [
     { id: 'merge', label: 'Merge', icon: 'merge', count: mergeCount },
@@ -46,6 +66,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ))}
       </nav>
+      <div className="sb-theme">
+        <button className="sb-theme-btn" onClick={cycleTheme} title="Click to change theme (Auto → Light → Dark)">
+          <Icon name={themeIcon} />
+          <span>{themeLabel}</span>
+        </button>
+      </div>
       <div className="sb-status">
         <div className="sb-stat-row">
           <span className={`sb-dot ${ffmpegAvailable ? '' : 'off'}`} />

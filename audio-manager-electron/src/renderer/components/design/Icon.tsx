@@ -28,6 +28,8 @@ export type IconName =
   | 'history'
   | 'sun'
   | 'moon'
+  | 'auto'
+  | 'retry'
 
 const paths: Record<IconName, React.ReactNode> = {
   extract: (
@@ -119,6 +121,20 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   moon: <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />,
+  auto: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 000 18z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  retry: (
+    <>
+      <path d="M3 12a9 9 0 0115.5-6.5L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 01-15.5 6.5L3 16" />
+      <path d="M3 21v-5h5" />
+    </>
+  ),
 }
 
 export const Icon: React.FC<{ name: IconName; className?: string }> = ({ name, className = 'ico' }) => (

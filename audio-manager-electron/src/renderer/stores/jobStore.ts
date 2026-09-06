@@ -27,6 +27,7 @@ interface JobState {
   drawerCollapsed: boolean
 
   startRun: (jobs: Array<{ id: string; name: string }>) => void
+  retryJob: (job: { id: string; name: string }) => void
   updateJobProgress: (jobId: string, percent: number) => void
   updateJobSpeed: (jobId: string, mbps: number) => void
   finishJob: (jobId: string, ok: boolean) => void
@@ -56,6 +57,32 @@ export const useJobStore = create<JobState>((set) => ({
       failed: 0,
       total: jobs.length,
       currentFile: jobs[0]?.name || '',
+    }),
+
+  // Re-run a single row that ended in error (a cancel mid-progress counts as
+  // one). If nothing is running, this starts a fresh single-file run. If a
+  // batch is still in flight (this row failed/was cancelled while others in
+  // the same batch kept going), fold it back in instead of resetting the
+  // jobs already tracked — bump `total` by one so the retry's own terminal
+  // event (counted again by finishJob, since `done` is reset below) still
+  // balances against `completed + failed` when the run finishes.
+  retryJob: (job) =>
+    set((state) => {
+      if (!state.running) {
+        return {
+          running: true,
+          jobs: [{ ...job, progress: 0, speedMBps: 0, done: false }],
+          completed: 0,
+          failed: 0,
+          total: 1,
+          currentFile: job.name,
+        }
+      }
+      const jobs = [
+        ...state.jobs.filter((j) => j.id !== job.id),
+        { ...job, progress: 0, speedMBps: 0, done: false },
+      ]
+      return { jobs, total: state.total + 1 }
     }),
 
   updateJobProgress: (jobId, percent) =>

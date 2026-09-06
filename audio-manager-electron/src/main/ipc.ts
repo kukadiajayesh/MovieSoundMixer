@@ -141,6 +141,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         overwrite?: boolean
         backend?: 'auto' | 'mkvmerge' | 'ffmpeg'
         quality?: 'fast' | 'balanced' | 'quality'
+        // User-picked hardware encoder (from the GPU Acceleration dropdown).
+        // Omitted/empty means "auto-pick the best available".
+        encoder?: string
       },
     ) => {
       const { id, videoPath, audioPath, outContainer, outFolder, copyVideo, mergeMode, duration, overwrite } = payload
@@ -218,8 +221,13 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           // Re-encoding: use a hardware encoder when GPU acceleration is enabled
           // and one is available, otherwise fall back to CPU libx264.
           const settings = await db.getSettings()
-          const gpuEnabled = settings.gpu_enabled !== 'false'
-          const encoder = gpuEnabled ? pickPreferredEncoder(detectGPUEncoders()) : null
+          const gpuEnabled = settings.gpu_enabled === 'true'
+          const detected = detectGPUEncoders()
+          // Honor the user's dropdown choice only if it's actually one of the
+          // encoders we detected — otherwise fall back to auto-picking the best.
+          const requestedEncoder =
+            payload.encoder && detected.available.includes(payload.encoder) ? payload.encoder : null
+          const encoder = gpuEnabled ? requestedEncoder ?? pickPreferredEncoder(detected) : null
           args.push(...getGPUEncoderArgs(encoder ?? 'libx264', payload.quality ?? 'balanced'))
         }
 
