@@ -30,6 +30,9 @@ export type IconName =
   | 'moon'
   | 'auto'
   | 'retry'
+  | 'link'
+  | 'more'
+  | 'warning'
 
 const paths: Record<IconName, React.ReactNode> = {
   extract: (
@@ -133,6 +136,26 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 01-15.5 6.5L3 16" />
       <path d="M3 21v-5h5" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M9 15l6-6" />
+      <path d="M11 6l1-1a4 4 0 015.5 5.5l-1 1" />
+      <path d="M13 18l-1 1a4 4 0 01-5.5-5.5l1-1" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="12" cy="5" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.3" fill="currentColor" stroke="none" />
+    </>
+  ),
+  warning: (
+    <>
+      <path d="M12 3.5l9.5 16.5H2.5L12 3.5z" />
+      <path d="M12 10v4M12 17.5h.01" />
     </>
   ),
 }

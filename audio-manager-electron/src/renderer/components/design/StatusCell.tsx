@@ -4,10 +4,11 @@ export type RowStatus = 'ready' | 'probing' | 'running' | 'done' | 'error'
 
 const fmtPct = (n: number) => `${Math.round(n * 100)}%`
 
-export const StatusCell: React.FC<{ status: RowStatus; progress?: number; error?: string }> = ({
+export const StatusCell: React.FC<{ status: RowStatus; progress?: number; error?: string; hasAudio?: boolean }> = ({
   status,
   progress = 0,
   error,
+  hasAudio = false,
 }) => {
   if (status === 'running') {
     return (
@@ -44,10 +45,18 @@ export const StatusCell: React.FC<{ status: RowStatus; progress?: number; error?
       </div>
     )
   }
+  if (hasAudio) {
+    return (
+      <div className="status ready">
+        <span className="dot" />
+        <span>Ready</span>
+      </div>
+    )
+  }
   return (
-    <div className="status ready">
+    <div className="status ready unmatched">
       <span className="dot" />
-      <span>Ready</span>
+      <span>Unmatched</span>
     </div>
   )
 }

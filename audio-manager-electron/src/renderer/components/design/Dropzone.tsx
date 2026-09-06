@@ -57,7 +57,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({
       <div className="dz-actions">
         {onAddFiles && (
           <button
-            className="btn"
+            className="btn btn-primary"
             onClick={(e) => {
               e.stopPropagation()
               onAddFiles()

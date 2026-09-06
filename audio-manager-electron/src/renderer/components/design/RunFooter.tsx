@@ -13,6 +13,7 @@ interface RunFooterProps {
   outputDir: string
   setOutputDir: (dir: string) => void
   onBrowse: () => void
+  onOpen?: () => void
   running: boolean
   onRun: () => void
   onStop: () => void
@@ -29,6 +30,7 @@ export const RunFooter: React.FC<RunFooterProps> = ({
   outputDir,
   setOutputDir,
   onBrowse,
+  onOpen,
   running,
   onRun,
   onStop,
@@ -39,6 +41,32 @@ export const RunFooter: React.FC<RunFooterProps> = ({
 }) => {
   return (
     <div className="run-footer">
+      <div className="rf-output">
+        <label>Output</label>
+        <div className="rf-input">
+          <input
+            value={outputDir}
+            onChange={(e) => setOutputDir(e.target.value)}
+            placeholder="Choose output folder…"
+            disabled={running}
+          />
+          {onOpen && (
+            <button
+              onClick={onOpen}
+              disabled={!outputDir}
+              aria-label="Open output folder"
+              data-tip="Open output folder"
+              title="Open output folder"
+            >
+              <Icon name="folder" />
+            </button>
+          )}
+          <button onClick={onBrowse} disabled={running}>
+            Browse…
+          </button>
+        </div>
+      </div>
+
       {running ? (
         <>
           <div className="run-progress">
@@ -59,17 +87,6 @@ export const RunFooter: React.FC<RunFooterProps> = ({
         </>
       ) : (
         <>
-          <div className="rf-output">
-            <label>Output</label>
-            <div className="rf-input">
-              <input
-                value={outputDir}
-                onChange={(e) => setOutputDir(e.target.value)}
-                placeholder="Choose output folder…"
-              />
-              <button onClick={onBrowse}>Browse…</button>
-            </div>
-          </div>
           {children}
           <button className="btn btn-primary" disabled={!canRun || !outputDir} onClick={onRun}>
             <Icon name="play" />

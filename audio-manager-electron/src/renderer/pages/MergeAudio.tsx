@@ -12,6 +12,7 @@ import { RowStatus } from '../components/design/StatusCell'
 import { StreamPicker } from '../components/design/StreamPicker'
 import { Switch } from '../components/design/Switch'
 import { useToast } from '../components/design/Toasts'
+import appLogo from '../../../assets/icon.png'
 
 type Backend = 'auto' | 'mkvmerge' | 'ffmpeg'
 type Quality = 'fast' | 'balanced' | 'quality'
@@ -222,6 +223,15 @@ export const MergeAudio: React.FC = () => {
     }
   }
 
+  const handleOpenOutputDir = async () => {
+    if (!outputDir) return
+    if (!window.electron?.ipcRenderer) return
+    const res = await window.electron.ipcRenderer.invoke('open-path', outputDir).catch(() => null)
+    if (res && !res.success) {
+      toast({ kind: 'error', title: 'Could not open folder', desc: res.error })
+    }
+  }
+
   // ── Run / stop ────────────────────────────────────────────────────
   // Enqueues the backend job for one already-matched pair. Shared by the
   // batch run below and by a single-row retry, so both paths stay in sync.
@@ -369,12 +379,14 @@ export const MergeAudio: React.FC = () => {
     <>
       <div className="page-scroll">
       <div className="page-head">
-        <div>
-          <h1 className="ph-title">Merge Audio</h1>
-          <p className="ph-sub">
-            Add an external audio track to videos. Auto-matches by episode (SxxExx) — or click a row's
-            audio cell and pick a video directly to pull one of its channels.
-          </p>
+        <div className="ph-titlegroup">
+          <span className="ph-badge">
+            <img src={appLogo} alt="" />
+          </span>
+          <div>
+            <h1 className="ph-title">Merge Audio</h1>
+            <p className="ph-sub">Append an audio stream into the target video file.</p>
+          </div>
         </div>
         <div className="ph-actions">
           <button
@@ -396,8 +408,8 @@ export const MergeAudio: React.FC = () => {
       {pairs.length === 0 ? (
         <div className="dropzone-stage">
           <Dropzone
-            title="Drop videos and audio files"
-            sub="Files are paired automatically by episode number"
+            title="Upload video files and append audio"
+            sub="Fuse with other audio tracks"
             kind="folder"
             onAddFiles={() => handleAddFiles()}
             onAddFolder={handleAddFolder}
@@ -408,8 +420,8 @@ export const MergeAudio: React.FC = () => {
         !running && (
           <Dropzone
             slim
-            title="Drop videos and audio files"
-            sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode — drag more in, or drop here`}
+            title="Upload video files and append audio"
+            sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode — fuse with other audio tracks`}
             kind="folder"
             onAddFiles={() => handleAddFiles()}
             onAddFolder={handleAddFolder}
@@ -419,25 +431,49 @@ export const MergeAudio: React.FC = () => {
       )}
 
       {pairs.length > 0 && (
-        <div className="merge-rows">
-          {pairs.map((p) => (
-            <MergeRow
-              key={p.id}
-              pair={p}
-              status={toRowStatus(p.status)}
-              assigning={assigning === p.id}
-              onAssignClick={() => {
-                setAssigning(p.id)
-                handleAddFiles(p.id)
-              }}
-              onOpenChannelPicker={(audio, anchor) => setChannelPicker({ pairId: p.id, audio, anchor })}
-              onClearAudio={() => assignAudio(p.id, null)}
-              onRetry={() => handleRetryPair(p.id)}
-              onCancel={() => handleCancelPair(p.id)}
-              onRemove={() => handleRemovePair(p.id)}
-              onOpenOutput={openOutput}
-            />
-          ))}
+        <div className={`merge-table ${running ? 'is-running' : ''}`}>
+          <div className="merge-row-header">
+            <div className="mc-head">
+              <span className="mc-icon video">
+                <Icon name="play" />
+              </span>
+              <span className="mc-cap">Target Video</span>
+            </div>
+            <div className="merge-row-header-spacer" aria-hidden="true" />
+            <div className="mc-head">
+              <span className="mc-icon audio">
+                <Icon name="music" />
+              </span>
+              <span className="mc-cap">Source Audio File</span>
+            </div>
+            <div className="merge-row-header-side" aria-hidden="true" />
+          </div>
+
+          <div className="merge-rows">
+            {pairs.map((p) => (
+              <MergeRow
+                key={p.id}
+                pair={p}
+                status={toRowStatus(p.status)}
+                disabled={running}
+                assigning={assigning === p.id}
+                onAssignClick={() => {
+                  setAssigning(p.id)
+                  handleAddFiles(p.id)
+                }}
+                onOpenChannelPicker={(audio, anchor) => {
+                  setChannelPicker((prev) =>
+                    prev && prev.pairId === p.id ? null : { pairId: p.id, audio, anchor }
+                  )
+                }}
+                onClearAudio={() => assignAudio(p.id, null)}
+                onOpenVideo={openOutput}
+                onRetry={() => handleRetryPair(p.id)}
+                onCancel={() => handleCancelPair(p.id)}
+                onRemove={() => handleRemovePair(p.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -527,10 +563,10 @@ export const MergeAudio: React.FC = () => {
         </div>
 
         <div className="card">
-          <div className="card-head">
-            <Icon name="cpu" className="ico ico-glow ico-glow-ok" />
-            <span>Output</span>
-          </div>
+         <div className="card-head">
+           <Icon name="settings" className="ico ico-glow ico-glow-ok" />
+           <span>Output</span>
+         </div>
           <div className="field">
             <label>Container</label>
             <div className="seg">
@@ -576,6 +612,7 @@ export const MergeAudio: React.FC = () => {
         outputDir={outputDir}
         setOutputDir={setOutputDir}
         onBrowse={handleBrowseOutput}
+        onOpen={handleOpenOutputDir}
         running={running}
         onRun={handleRun}
         onStop={handleStop}

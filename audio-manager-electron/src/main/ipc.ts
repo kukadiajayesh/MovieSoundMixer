@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
+import { getThumbnailDataUrl } from './ffmpeg/thumbnail'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
@@ -94,6 +95,17 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
     } catch (err: any) {
       console.error(`Failed to probe streams for ${filePath}:`, err)
       return { success: false, error: err.message, streams: [] }
+    }
+  })
+
+  // 3b. Video thumbnail (one extracted frame, as a data URL)
+  ipcMain.handle('get-video-thumbnail', async (_event, filePath: string) => {
+    try {
+      const dataUrl = await getThumbnailDataUrl(filePath)
+      return { success: true, dataUrl }
+    } catch (err: any) {
+      console.error(`Failed to extract thumbnail for ${filePath}:`, err)
+      return { success: false, error: err.message }
     }
   })
 

@@ -26,6 +26,7 @@ export function initDatabase(): Promise<sqlite3.Database> {
 
         createTables()
           .then(() => seedDefaultSettings())
+          .then(() => resetGPUSettingOnLaunch())
           .then(() => resolve(db!))
           .catch(reject)
       })
@@ -142,5 +143,18 @@ function seedDefaultSettings(): Promise<void> {
         else resolve()
       })
     })
+  })
+}
+
+function resetGPUSettingOnLaunch(): Promise<void> {
+  const database = getDatabase()
+  return new Promise((resolve, reject) => {
+    database.run(
+      "UPDATE settings SET value = 'false' WHERE key = 'gpu_enabled'",
+      (err) => {
+        if (err) reject(err)
+        else resolve()
+      },
+    )
   })
 }
