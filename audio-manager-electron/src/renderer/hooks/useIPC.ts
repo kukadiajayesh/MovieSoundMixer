@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { LogTag, useJobStore } from '../stores/jobStore'
-import { useHistoryStore } from '../stores/historyStore'
 import { useMergeStore } from '../stores/mergeStore'
 
 const classifyLogLine = (message: string): LogTag => {
@@ -49,13 +48,10 @@ export const useIPC = () => {
         pairs.updatePairStatus(data.jobId, 'success', undefined, data.outputPath)
         pairs.updatePairProgress(data.jobId, 1)
         jobs.finishJob(data.jobId, true)
-        // Reload SQLite history when a background conversion finishes
-        useHistoryStore.getState().loadHistory()
       } else if (data.status === 'failed') {
         pairs.updatePairStatus(data.jobId, 'error', data.error || 'Failed')
         jobs.finishJob(data.jobId, false)
         jobs.addLog(`Job failed: ${data.error}`, 'error')
-        useHistoryStore.getState().loadHistory()
       } else if (data.status === 'processing') {
         pairs.updatePairStatus(data.jobId, 'processing')
       }

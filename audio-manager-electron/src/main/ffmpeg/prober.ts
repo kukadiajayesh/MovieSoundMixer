@@ -14,6 +14,37 @@ export interface AudioStreamInfo {
 export interface ProbeResult {
   duration: number // total duration in seconds
   streams: AudioStreamInfo[]
+  videoCodec?: string // friendly label, e.g. "H.264" — absent for audio-only files
+  resolution?: string // friendly label, e.g. "1080p" — absent for audio-only files
+}
+
+// ffmpeg codec token -> friendly display label.
+const VIDEO_CODEC_LABELS: Record<string, string> = {
+  h264: 'H.264',
+  avc: 'H.264',
+  hevc: 'H.265',
+  h265: 'H.265',
+  vp9: 'VP9',
+  vp8: 'VP8',
+  av1: 'AV1',
+  mpeg4: 'MPEG-4',
+  mpeg2video: 'MPEG-2',
+  theora: 'Theora',
+  prores: 'ProRes',
+}
+
+const labelForVideoCodec = (token: string): string => {
+  const key = token.toLowerCase()
+  return VIDEO_CODEC_LABELS[key] || token.toUpperCase()
+}
+
+const labelForResolution = (height: number): string => {
+  if (height >= 2160) return '4K'
+  if (height >= 1440) return '1440p'
+  if (height >= 1080) return '1080p'
+  if (height >= 720) return '720p'
+  if (height >= 480) return '480p'
+  return `${height}p`
 }
 
 export function probeStreams(filePath: string): Promise<ProbeResult> {
@@ -33,12 +64,16 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
       try {
         const streams: AudioStreamInfo[] = []
         let duration = 0
+        let videoCodec: string | undefined
+        let resolution: string | undefined
 
         // Split stderr by lines
         const lines = stderrData.split('\n')
 
-        // Regular expressions to match Audio Streams & Duration
+        // Regular expressions to match Audio/Video Streams & Duration
         const audioStreamRegex = /Stream #0:(\d+)(?:\(([^)]+)\))?:\s*Audio:\s*([^,\s\()]+)/i
+        // e.g. "Stream #0:0(und): Video: h264 (High), yuv420p, 1920x1080 [SAR ...]"
+        const videoStreamRegex = /Stream #0:\d+(?:\([^)]+\))?:\s*Video:\s*([^,\s\()]+).*?(\d{2,5})x(\d{2,5})/i
         const anyStreamRegex = /Stream #0:\d+/
         const durationRegex = /Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})/i
         const titleRegex = /^\s*title\s*:\s*(.+?)\s*$/i
@@ -57,6 +92,15 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
             const seconds = parseInt(durMatch[3], 10)
             const centiseconds = parseInt(durMatch[4], 10)
             duration = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
+          }
+
+          // Check for video stream match — only the first one counts for display
+          if (videoCodec === undefined) {
+            const vMatch = line.match(videoStreamRegex)
+            if (vMatch) {
+              videoCodec = labelForVideoCodec(vMatch[1])
+              resolution = labelForResolution(parseInt(vMatch[3], 10))
+            }
           }
 
           // Check for audio stream match
@@ -108,7 +152,7 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
           }
         }
 
-        resolve({ duration, streams })
+        resolve({ duration, streams, videoCodec, resolution })
       } catch (err) {
         reject(err)
       }

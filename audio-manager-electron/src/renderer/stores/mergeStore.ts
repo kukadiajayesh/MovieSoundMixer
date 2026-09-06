@@ -19,6 +19,10 @@ export interface MergeSource {
   // audio) file be used as the audio donor with a specific channel picked.
   streams?: AudioStream[]
   selectedStreamIndex?: number
+  // Present once the source has been probed (see probeSource in MergeAudio.tsx).
+  duration?: number // seconds
+  videoCodec?: string // friendly label, e.g. "H.264" — absent for audio-only files
+  resolution?: string // friendly label, e.g. "1080p" — absent for audio-only files
 }
 
 export interface MergePair {
@@ -50,6 +54,7 @@ interface MergeState {
   addFiles: (files: MergeSource[]) => void
   assignAudio: (pairId: string, audio: MergeSource | null) => void
   updateAudioStreamIndex: (pairId: string, streamIndex: number) => void
+  updateSourceMeta: (pairId: string, side: 'video' | 'audio', meta: Partial<MergeSource>) => void
   removePair: (id: string) => void
   clearPairs: () => void
   updatePairStatus: (id: string, status: MergePair['status'], error?: string, outputPath?: string) => void
@@ -108,6 +113,18 @@ export const useMergeStore = create<MergeState>((set) => ({
       ),
     })),
 
+  // Merges probed metadata (duration/videoCodec/resolution/streams) into one
+  // side of a pair once the background probe for it resolves. A no-op if the
+  // audio side has since been cleared/reassigned out from under it.
+  updateSourceMeta: (pairId, side, meta) =>
+    set((state) => ({
+      pairs: state.pairs.map((p) => {
+        if (p.id !== pairId) return p
+        if (side === 'video') return { ...p, video: { ...p.video, ...meta } }
+        return p.audio ? { ...p, audio: { ...p.audio, ...meta } } : p
+      }),
+    })),
+
   removePair: (id) =>
     set((state) => ({
       pairs: state.pairs.filter((p) => p.id !== id),
@@ -127,6 +144,3 @@ export const useMergeStore = create<MergeState>((set) => ({
       pairs: state.pairs.map((p) => (p.id === id ? { ...p, progress } : p)),
     })),
 }))
-
-// TEMP DEBUG EXPOSE — remove before commit
-;(window as any).__mergeStore = useMergeStore

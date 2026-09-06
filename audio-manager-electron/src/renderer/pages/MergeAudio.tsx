@@ -3,10 +3,12 @@ import { useShallow } from 'zustand/react/shallow'
 import { useMergeStore, MergePair, MergeSource, isVideoFile } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { Icon } from '../components/design/Icon'
+import { useThemeStore, ThemeType } from '../stores/themeStore'
+import { Icon, IconName } from '../components/design/Icon'
 import { Dropzone } from '../components/design/Dropzone'
+import { MergeRow } from '../components/design/MergeRow'
 import { RunFooter } from '../components/design/RunFooter'
-import { StatusCell, RowStatus } from '../components/design/StatusCell'
+import { RowStatus } from '../components/design/StatusCell'
 import { StreamPicker } from '../components/design/StreamPicker'
 import { Switch } from '../components/design/Switch'
 import { useToast } from '../components/design/Toasts'
@@ -20,8 +22,14 @@ const MEDIA_EXTS = [
   'mp3', 'aac', 'flac', 'wav', 'm4a', 'ogg', 'wma', 'eac3', 'ac3', 'dts', 'mka',
 ]
 
-const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
-const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
+// Theme toggle cycles through these three modes in this order.
+const THEME_CYCLE: ThemeType[] = ['system', 'light', 'dark']
+const THEME_META: Record<ThemeType, { label: string; icon: IconName }> = {
+  system: { label: 'Auto', icon: 'auto' },
+  light: { label: 'Light', icon: 'sun' },
+  dark: { label: 'Dark', icon: 'moon' },
+}
+
 const dirName = (fp: string) => {
   const sep = fp.includes('\\') ? '\\' : '/'
   const idx = fp.lastIndexOf(sep)
@@ -57,20 +65,27 @@ export const MergeAudio: React.FC = () => {
   const [quality, setQuality] = useState<Quality>('balanced')
   const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
   const [encoder, setEncoder] = useState<string>('') // '' = auto-pick best
+  const [backendAvailable, setBackendAvailable] = useState({ ffmpeg: false, mkvmerge: false })
   const [assigning, setAssigning] = useState<string | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
 
+  const { theme, setTheme } = useThemeStore()
+  const cycleTheme = () => setTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length])
+  const { label: themeLabel, icon: themeIcon } = THEME_META[theme]
+
   useEffect(() => {
     window.electron?.ipcRenderer
       ?.invoke('get-dependency-status')
-      .then((d) => setGpuEncoders(d?.gpuInfo?.available ?? []))
+      .then((d) => {
+        setGpuEncoders(d?.gpuInfo?.available ?? [])
+        setBackendAvailable({ ffmpeg: !!d?.ffmpegAvailable, mkvmerge: !!d?.mkvmergeAvailable })
+      })
       .catch(() => {})
   }, [])
 
   const matched = pairs.filter((p) => p.audio).length
-  const unmatched = pairs.length - matched
 
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
@@ -86,6 +101,10 @@ export const MergeAudio: React.FC = () => {
       title: `Added ${entries.length} file${entries.length !== 1 ? 's' : ''}`,
       desc: `${videos} video(s), ${entries.length - videos} audio file(s) — auto-matched by episode`,
     })
+    // Background-fill duration/codec/resolution for the row cards. Not
+    // awaited — ingest() stays synchronous and rows render immediately with
+    // just the filename, filling in the rest as each probe resolves.
+    void probeUnprobedPairs()
   }
 
   const handleDropFiles = (dropped: File[]) => {
@@ -99,23 +118,55 @@ export const MergeAudio: React.FC = () => {
     )
   }
 
-  // Probe a picked audio source so a video (or any multi-track file) can be used
-  // as the audio donor with a specific channel, not just a plain audio file.
-  const probeAudioSource = async (entry: { name: string; path: string }): Promise<MergeSource> => {
-    if (!window.electron?.ipcRenderer) return entry
-    let streams: MergeSource['streams'] = []
+  // Probes one source file for duration, video info (resolution/codec, if
+  // it's a video), and audio streams — the same probe whether the file ends
+  // up playing the "video" or "audio" role in a pair, and whether it's a
+  // plain audio file or a video used as the audio donor with a channel picked.
+  const probeSource = async (entry: { name: string; path: string }): Promise<Partial<MergeSource>> => {
+    if (!window.electron?.ipcRenderer) return {}
     try {
       const res = await window.electron.ipcRenderer.invoke('probe-streams', entry.path)
-      if (res?.success) streams = res.streams
+      if (!res?.success) return {}
+      let streams: MergeSource['streams'] = res.streams
+      if (!streams || streams.length === 0) {
+        // No detectable audio — still surface it so the reason is visible in the UI
+        streams = [{ index: 0, codec: 'unknown', channels: 2 }]
+      }
+      const preferred = streams.find((s) => s.isDefault) ?? streams[0]
+      return {
+        streams,
+        selectedStreamIndex: preferred.index,
+        duration: res.duration,
+        videoCodec: res.videoCodec,
+        resolution: res.resolution,
+      }
     } catch (err) {
-      console.error('Failed to probe audio source:', err)
+      console.error('Failed to probe source:', err)
+      return {}
     }
-    if (!streams || streams.length === 0) {
-      // No detectable audio — still assign it so the reason is visible in the UI
-      streams = [{ index: 0, codec: 'unknown', channels: 2 }]
+  }
+
+  // Fills in duration/codec/resolution for every pair whose video or audio
+  // side hasn't been probed yet. Runs after addFiles() so auto-matching has
+  // already happened synchronously — this is what makes it work for
+  // auto-matched (drag-a-folder) audio too, not just manual assignment.
+  // Sequential, not Promise.all, so a big folder import doesn't spawn dozens
+  // of ffmpeg processes at once.
+  const probeUnprobedPairs = async () => {
+    const targets = useMergeStore
+      .getState()
+      .pairs.filter((p) => p.video.duration === undefined || (p.audio && p.audio.duration === undefined))
+    for (const p of targets) {
+      if (p.video.duration === undefined) {
+        const meta = await probeSource(p.video)
+        useMergeStore.getState().updateSourceMeta(p.id, 'video', meta)
+      }
+      const current = useMergeStore.getState().pairs.find((x) => x.id === p.id)
+      if (current?.audio && current.audio.duration === undefined) {
+        const meta = await probeSource(current.audio)
+        useMergeStore.getState().updateSourceMeta(p.id, 'audio', meta)
+      }
     }
-    const preferred = streams.find((s) => s.isDefault) ?? streams[0]
-    return { ...entry, streams, selectedStreamIndex: preferred.index }
   }
 
   const handleAddFiles = async (pairId?: string) => {
@@ -134,9 +185,10 @@ export const MergeAudio: React.FC = () => {
       }))
       if (pairId) {
         // Manual audio assignment for one row — a single file, probed for its
-        // audio streams so a channel can be picked.
-        const audio = await probeAudioSource(entries[0])
-        assignAudio(pairId, audio)
+        // duration, audio streams (so a channel can be picked), and video
+        // info if a video file was picked as the audio donor.
+        const meta = await probeSource(entries[0])
+        assignAudio(pairId, { ...entries[0], ...meta })
       } else {
         ingest(entries)
       }
@@ -325,6 +377,15 @@ export const MergeAudio: React.FC = () => {
           </p>
         </div>
         <div className="ph-actions">
+          <button
+            className="btn btn-ghost"
+            onClick={cycleTheme}
+            aria-label="Click to change theme (Auto → Light → Dark)"
+            data-tip="Click to change theme (Auto → Light → Dark)"
+          >
+            <Icon name={themeIcon} />
+            {themeLabel}
+          </button>
           <button className="btn btn-ghost" onClick={clearPairs} disabled={pairs.length === 0 || running}>
             <Icon name="trash" />
             Clear
@@ -344,163 +405,46 @@ export const MergeAudio: React.FC = () => {
           />
         </div>
       ) : (
-        <>
-          {!running && (
-            <Dropzone
-              slim
-              title="Drop videos and audio files"
-              sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode — drag more in, or drop here`}
-              kind="folder"
-              onAddFiles={() => handleAddFiles()}
-              onAddFolder={handleAddFolder}
-              onDropFiles={handleDropFiles}
-            />
-          )}
-          <div className="match-preview">
-            <Icon name="info" className="ico" />
-            <span className="label">Episode auto-match:</span>
-            <span className="stat">{matched} matched</span>
-            {unmatched > 0 && (
-              <>
-                <span style={{ color: 'var(--fg-4)' }}>·</span>
-                <span className="stat warn">{unmatched} unmatched</span>
-              </>
-            )}
-            {unmatchedAudios.length > 0 && (
-              <>
-                <span style={{ color: 'var(--fg-4)' }}>·</span>
-                <span className="stat warn">{unmatchedAudios.length} spare audio file(s)</span>
-              </>
-            )}
-            <span style={{ color: 'var(--fg-4)', marginLeft: 'auto', fontSize: 11 }}>
-              Click any audio cell to override
-            </span>
-          </div>
-        </>
+        !running && (
+          <Dropzone
+            slim
+            title="Drop videos and audio files"
+            sub={`${pairs.length} pair${pairs.length !== 1 ? 's' : ''} · auto-matched by episode — drag more in, or drop here`}
+            kind="folder"
+            onAddFiles={() => handleAddFiles()}
+            onAddFolder={handleAddFolder}
+            onDropFiles={handleDropFiles}
+          />
+        )
       )}
 
       {pairs.length > 0 && (
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th className="col-idx">#</th>
-                <th>Target Video</th>
-                <th>Source Audio File</th>
-                <th className="col-meta">Episode</th>
-                <th className="col-status">Status</th>
-                <th className="col-actions"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pairs.map((p, i) => (
-                <tr key={p.id}>
-                  <td className="col-idx">{i + 1}</td>
-                  <td>
-                    <div className={`fname ext-${fileExt(p.video.name)}`}>
-                      <span className="ext">{fileExt(p.video.name)}</span>
-                      <span className="label">{baseName(p.video.name)}</span>
-                    </div>
-                  </td>
-                  <td
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      setAssigning(p.id)
-                      handleAddFiles(p.id)
-                    }}
-                    data-tip="Click to choose a different audio or video file"
-                  >
-                    {p.audio ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                        <div className={`fname ext-${fileExt(p.audio.name)}`}>
-                          <span className="ext">{fileExt(p.audio.name)}</span>
-                          <span className="label">{baseName(p.audio.name)}</span>
-                        </div>
-                        {p.audio.streams && p.audio.streams.length > 0 && (() => {
-                          const picked =
-                            p.audio!.streams!.find((s) => s.index === p.audio!.selectedStreamIndex) ??
-                            p.audio!.streams![0]
-                          return (
-                            <span
-                              className="stream-pick"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setChannelPicker({ pairId: p.id, audio: p.audio!, anchor: e.currentTarget })
-                              }}
-                              data-tip="Click to choose a different audio channel"
-                            >
-                              <span className="badge">{picked.codec.toUpperCase()}</span>
-                              {picked.language && <span className="lang">{picked.language.toUpperCase()}</span>}
-                              <span className="ch">{picked.channels}ch</span>
-                              <Icon name="chevron" className="caret" />
-                            </span>
-                          )
-                        })()}
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--warn)', fontSize: 11, fontStyle: 'italic' }}>
-                        {assigning === p.id ? 'Choosing…' : '⚠ No match — click to assign manually'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="col-meta mono" style={{ fontSize: 11 }}>
-                    {p.episode || '—'}
-                  </td>
-                  <td className="col-status">
-                    <StatusCell status={toRowStatus(p.status)} progress={p.progress} error={p.error} />
-                  </td>
-                  <td className="col-actions">
-                    <div className="row-actions">
-                    {p.status === 'success' && p.outputPath && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        aria-label="Open merged file"
-                        data-tip="Open merged file"
-                        onClick={() => openOutput(p.outputPath!)}
-                      >
-                        <Icon name="play" />
-                      </button>
-                    )}
-                    {p.status === 'error' && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        aria-label="Retry this file"
-                        data-tip="Retry this file"
-                        onClick={() => handleRetryPair(p.id)}
-                      >
-                        <Icon name="retry" />
-                      </button>
-                    )}
-                    {p.status === 'processing' ? (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        aria-label="Cancel this file"
-                        data-tip="Cancel this file"
-                        onClick={() => handleCancelPair(p.id)}
-                      >
-                        <Icon name="stop" />
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        aria-label="Remove this file"
-                        data-tip="Remove this file"
-                        onClick={() => handleRemovePair(p.id)}
-                      >
-                        <Icon name="close" />
-                      </button>
-                    )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="merge-rows">
+          {pairs.map((p) => (
+            <MergeRow
+              key={p.id}
+              pair={p}
+              status={toRowStatus(p.status)}
+              assigning={assigning === p.id}
+              onAssignClick={() => {
+                setAssigning(p.id)
+                handleAddFiles(p.id)
+              }}
+              onOpenChannelPicker={(audio, anchor) => setChannelPicker({ pairId: p.id, audio, anchor })}
+              onClearAudio={() => assignAudio(p.id, null)}
+              onRetry={() => handleRetryPair(p.id)}
+              onCancel={() => handleCancelPair(p.id)}
+              onRemove={() => handleRemovePair(p.id)}
+              onOpenOutput={openOutput}
+            />
+          ))}
         </div>
       )}
 
-      {/* Merge settings cards — hidden until at least one file is picked */}
-      {pairs.length > 0 && (
+      {/* Merge settings cards — hidden until at least one file is picked, and
+          tucked away again while a merge is running so the running rows have
+          the space; they reappear once the run stops or completes. */}
+      {pairs.length > 0 && !running && (
       <div className="cards">
         <div className="card">
           <div className="card-head">
@@ -554,14 +498,27 @@ export const MergeAudio: React.FC = () => {
             {(
               [
                 { id: 'auto', lbl: 'Auto', desc: 'Use mkvmerge for MKV if available, else FFmpeg' },
-                { id: 'mkvmerge', lbl: 'Force mkvmerge', desc: 'External track first, all originals kept' },
-                { id: 'ffmpeg', lbl: 'Force FFmpeg', desc: 'Compatible with more containers' },
-              ] as Array<{ id: Backend; lbl: string; desc: string }>
+                {
+                  id: 'mkvmerge',
+                  lbl: 'Force mkvmerge',
+                  desc: 'External track first, all originals kept',
+                  available: backendAvailable.mkvmerge,
+                },
+                {
+                  id: 'ffmpeg',
+                  lbl: 'Force FFmpeg',
+                  desc: 'Compatible with more containers',
+                  available: backendAvailable.ffmpeg,
+                },
+              ] as Array<{ id: Backend; lbl: string; desc: string; available?: boolean }>
             ).map((o) => (
               <label key={o.id} className="radio-row">
                 <input type="radio" name="backend" checked={backend === o.id} onChange={() => setBackend(o.id)} />
                 <div>
-                  <div className="lbl">{o.lbl}</div>
+                  <div className="lbl">
+                    {o.lbl}
+                    {o.available && <span className="avail-dot" data-tip="Detected on this system" />}
+                  </div>
                   <div className="desc">{o.desc}</div>
                 </div>
               </label>

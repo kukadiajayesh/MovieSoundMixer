@@ -84,7 +84,13 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('probe-streams', async (_event, filePath: string) => {
     try {
       const result = await probeStreams(filePath)
-      return { success: true, duration: result.duration, streams: result.streams }
+      return {
+        success: true,
+        duration: result.duration,
+        streams: result.streams,
+        videoCodec: result.videoCodec,
+        resolution: result.resolution,
+      }
     } catch (err: any) {
       console.error(`Failed to probe streams for ${filePath}:`, err)
       return { success: false, error: err.message, streams: [] }

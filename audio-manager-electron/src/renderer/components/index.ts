@@ -9,7 +9,6 @@ export * from './forms/Select'
 export * from './layout/Divider'
 export * from './layout/Card'
 export * from './layout/PageHeader'
-export * from './layout/Sidebar'
 export * from './layout/Toolbar'
 
 // Indicators
