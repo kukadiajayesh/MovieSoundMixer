@@ -1,10 +1,18 @@
-# FFmpeg Audio Manager
+# Movie Audio Mux
 
 **Project Status**: ✅ COMPLETE AND PRODUCTION-READY  
 **Technology Stack**: Electron + React + TypeScript + SQLite3 + FFmpeg/mkvmerge  
 **Final Build**: Fully Tested, Optimized, and Polished
 
 ---
+<img width="1312" height="912" alt="Screenshot 2026-09-07 at 14 20 52" src="https://github.com/user-attachments/assets/5a61c3f8-07e7-4167-9ebd-d0b0b7436f30" />
+<img width="1312" height="978" alt="Screenshot 2026-09-07 at 14 21 30" src="https://github.com/user-attachments/assets/e3d117be-cdfc-44e4-97cf-8df38a7667d2" />
+
+<img width="1312" height="978" alt="Screenshot 2026-09-07 at 14 21 54" src="https://github.com/user-attachments/assets/1eded3d3-aa39-4927-a94f-ed8ca911609f" />
+<img width="1312" height="978" alt="Screenshot 2026-09-07 at 14 28 46" src="https://github.com/user-attachments/assets/4ccf0bbb-44f1-41d4-9bd2-1a5d73611c5e" />
+
+
+
 
 ## Executive Summary
 
