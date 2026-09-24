@@ -987,7 +987,16 @@ Merge fixes (same day):
 - **Prober missed every stream in MP4/M4A/MOV files** (`ffmpeg/prober.ts`): ffmpeg prints them as `Stream #0:1[0x2](eng): Audio: …`, and the regexes didn't allow the `[0x…]` ID. Those files showed a made-up "UNKNOWN 2ch" track, with no language and no video codec or resolution. Both regexes now accept the ID. The start-merge fixes above rely on this.
 - Videos with no audio now show a "No audio" badge instead of the fake "UNKNOWN Stereo".
 
+**2026-09-24 (later):** Waveform view and compare player (Phase 9.3), mkvmerge MP4 fix
+- **mkvmerge only writes MKV:** "Force mkvmerge" with MP4 used to write Matroska data into an `.mp4` file. The option is now disabled for MP4 and WebM ("Only writes MKV, not MP4"), picking either container moves a forced mkvmerge back to Auto, and `start-merge` rejects the combination.
+- **Audio Sync panel** (`SyncPanel.tsx`, replacing `SyncPopover.tsx`): the popover grew into a panel pinned near the top of the window over the dimmed, blurred backdrop, with a close button, Escape, and backdrop-click to close. It holds the offset controls, the track / length / start / Preview row, the waveforms and the player.
+- **Waveforms** (`SyncWaveform.tsx`): a canvas with two lanes over the preview window, the video's first audio track above and the new track below, drawn with the current offset (per pixel column, the loudest 5 ms peak it covers, scaled per lane). Drag the new-track lane to change the offset (10 ms steps); click to seek the player. Peaks come from `get-sync-waveform` (`ffmpeg/waveform.ts`: decode to 16 kHz mono f32 and keep the max per 5 ms bucket, with silence for any part before 0). The new track is fetched with 10 s of margin either side, so dragging and the slider redraw without refetching until the offset leaves that margin.
+- **Compare player** (`ComparePlayer.tsx`): `render-sync-preview` now also renders the video's own audio over the same window (M4A) when it has any. Both tracks play through one AudioContext from the same scheduled instant, so New / Original / Both are sample-aligned and switching is just gain. The video plays muted and follows the audio clock (rate nudges, or a seek past 250 ms). First try used a second `<audio>` element synced to the video, but it ran a steady 27 ms late, which would read as a sync error.
+
+Verified in the app: the waveforms of a test pair 300 ms apart showed the gap; dragging the new lane gave exactly −300 ms and lined the peaks up; a typed +4.7 s offset drew the peak at 6.99 s (expected 7.00); +12 s on a 30 s window (outside the margin) refetched and drew peaks at 14.29 / 16.79 / 19.28 s (expected 14.3 / 16.8 / 19.3). The picture tracked the audio within ±20 ms, mostly under 10 ms (one frame at 25 fps is 40 ms). Hear switching set gains New 1/0, Original 0/1, Both 0.8/0.8. A video with no audio showed "This video has no audio" with Original and Both disabled. Dark and light themes checked; no new lint errors.
+
 Still open:
+- **mkvmerge places M4A/MP4 donor audio ~42 ms later than FFmpeg does**, apparently ignoring the donor's encoder-delay trim. At 0 ms offset a tone at 2.300 s in the donor lands at 2.342 s; FFmpeg outputs (MKV and MP4) match the preview. So on the mkvmerge path, what the preview plays can be ~40 ms off from the file. Predates the sync work. Fix options: read the donor's edit-list delay and fold it into `--sync`, or prefer FFmpeg for MP4-family donors.
 - **Tooling:** renderer `tsc` fails on the unused `version` in `App.tsx`; ESLint 9 ignores `.eslintrc.json` unless run with `ESLINT_USE_FLAT_CONFIG=false`.
 
 ---
@@ -999,15 +1008,17 @@ Still open:
   - [x] Per-file offset from each row's Sync chip: ±5 s slider, typed value up to ±10 min, Reset (`MergeRow.tsx`, `SyncPopover.tsx`, `SyncControls.tsx`)
   - [x] `start-merge` applies `audioOffsetMs` to the added track only: mkvmerge `--sync`, FFmpeg `adelay` / `atrim` per-stream filter (`ipc.ts`)
   - [x] 10 / 20 / 30 s clip preview with the offset applied, played in the popover (`render-sync-preview`, `ffmpeg/preview.ts`)
-  - [x] Audio track picker in the popover, shared with the row's channel chip; dimmed, blurred backdrop while it's open
+  - [x] Audio track picker in the panel, shared with the row's channel chip; dimmed, blurred backdrop while it's open
   - [x] Verified in the app on both backends and both merge modes (see the 2026-09-24 notes)
 
 ### 9.2 Subtitle & Stream Management
 - [ ] **Subtitle Mux Support:** Add options to detect, select, and multiplex external/internal subtitle files (SRT, ASS, VTT) into the final MKV/MP4 containers.
 
 ### 9.3 Visual Processing & Live Previews
-- [ ] **Audio Waveform View:** Display a rendered audio waveform of the source and target files for visual alignment and inspection.
-- [ ] **In-App Preview Player:** Add a split-pane media player with scrub-to-compare controls to preview and compare before/after audio swap prior to merging.
+- [x] **Audio Waveform View:** Display a rendered audio waveform of the source and target files for visual alignment and inspection.
+  - [x] Original audio and new track (offset applied) stacked over the preview window; drag the new track to shift it, click to seek (`SyncWaveform.tsx`, `get-sync-waveform` → `ffmpeg/waveform.ts`)
+- [x] **In-App Preview Player:** Add a split-pane media player with scrub-to-compare controls to preview and compare before/after audio swap prior to merging.
+  - [x] Built as a compare player rather than a split pane (the picture is the same either way): New track / Original / Both on one timeline, scrubbed from the waveform (`ComparePlayer.tsx`)
 
 ### 9.4 Monitoring & Estimation
 - [ ] **Per-Job Estimated Time Remaining:** Implement velocity-based estimation to display live remaining time countdowns for individual active encoding jobs.

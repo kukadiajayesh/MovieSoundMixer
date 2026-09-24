@@ -5,7 +5,7 @@ import { useJobStore, selectOverall } from '../stores/jobStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore, ThemeType } from '../stores/themeStore'
 import { fmtOffset } from '../lib/mediaLabels'
-import { SyncPopover } from '../components/design/SyncPopover'
+import { SyncPanel } from '../components/design/SyncPanel'
 import { Icon, IconName } from '../components/design/Icon'
 import { Dropzone } from '../components/design/Dropzone'
 import { MergeRow } from '../components/design/MergeRow'
@@ -78,7 +78,7 @@ export const MergeAudio: React.FC = () => {
   const [encoder, setEncoder] = useState<string>('') // '' = auto-pick best
   const [backendAvailable, setBackendAvailable] = useState({ ffmpeg: false, mkvmerge: false })
   const [assigning, setAssigning] = useState<string | null>(null)
-  const [syncPicker, setSyncPicker] = useState<{ pairId: string; anchor: HTMLElement } | null>(null)
+  const [syncPairId, setSyncPairId] = useState<string | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
@@ -144,9 +144,9 @@ export const MergeAudio: React.FC = () => {
   }, [])
 
   const matched = pairs.filter((p) => p.audio).length
-  const syncPickerPair = syncPicker ? pairs.find((p) => p.id === syncPicker.pairId) : undefined
-  // Stable, so the popover's listeners aren't re-attached on every render.
-  const closeSyncPicker = useCallback(() => setSyncPicker(null), [])
+  const syncPair = syncPairId ? pairs.find((p) => p.id === syncPairId) : undefined
+  // Stable, so the panel's listeners aren't re-attached on every render.
+  const closeSync = useCallback(() => setSyncPairId(null), [])
 
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
@@ -528,13 +528,13 @@ export const MergeAudio: React.FC = () => {
                   setAssigning(p.id)
                   handleAddFiles(p.id)
                 }}
-                syncOpen={syncPicker?.pairId === p.id}
-                onOpenSyncPicker={(anchor) => {
+                syncOpen={syncPairId === p.id}
+                onOpenSync={() => {
                   setChannelPicker(null)
-                  setSyncPicker((prev) => (prev && prev.pairId === p.id ? null : { pairId: p.id, anchor }))
+                  setSyncPairId(p.id)
                 }}
                 onOpenChannelPicker={(audio, anchor) => {
-                  setSyncPicker(null)
+                  setSyncPairId(null)
                   setChannelPicker((prev) =>
                     prev && prev.pairId === p.id ? null : { pairId: p.id, audio, anchor }
                   )
@@ -551,13 +551,12 @@ export const MergeAudio: React.FC = () => {
       )}
 
 
-      {syncPicker && syncPickerPair?.audio && !running && (
-        <SyncPopover
-          pair={syncPickerPair}
-          anchor={syncPicker.anchor}
-          onChange={(ms) => setPairOffset(syncPicker.pairId, ms)}
-          onPickTrack={(index) => updateAudioStreamIndex(syncPicker.pairId, index)}
-          onClose={closeSyncPicker}
+      {syncPair?.audio && !running && (
+        <SyncPanel
+          pair={syncPair}
+          onChange={(ms) => setPairOffset(syncPair.id, ms)}
+          onPickTrack={(index) => updateAudioStreamIndex(syncPair.id, index)}
+          onClose={closeSync}
         />
       )}
 
@@ -655,11 +654,11 @@ export const MergeAudio: React.FC = () => {
                   id: 'mkvmerge',
                   lbl: 'Force mkvmerge',
                   desc:
-                    container === 'webm'
-                      ? "Can't write WebM, which needs re-encoding"
-                      : 'External track first, all originals kept',
+                    container === 'mkv'
+                      ? 'External track first, all originals kept'
+                      : `Only writes MKV, not ${container.toUpperCase()}`,
                   available: backendAvailable.mkvmerge,
-                  disabled: container === 'webm',
+                  disabled: container !== 'mkv',
                 },
                 {
                   id: 'ffmpeg',
@@ -705,8 +704,8 @@ export const MergeAudio: React.FC = () => {
                   className={container === c ? 'on' : ''}
                   onClick={() => {
                     setContainer(c)
-                    // mkvmerge can't write WebM; don't leave it selected.
-                    if (c === 'webm' && backend === 'mkvmerge') setBackend('auto')
+                    // mkvmerge only writes MKV; don't leave it selected.
+                    if (c !== 'mkv' && backend === 'mkvmerge') setBackend('auto')
                   }}
                 >
                   {c.toUpperCase()}

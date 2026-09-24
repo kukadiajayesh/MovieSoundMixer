@@ -14,6 +14,7 @@ export type IconName =
   | 'search'
   | 'play'
   | 'stop'
+  | 'pause'
   | 'check'
   | 'error'
   | 'info'
@@ -68,6 +69,12 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   play: <path d="M5 3l14 9-14 9V3z" fill="currentColor" />,
   stop: <rect x="5" y="5" width="14" height="14" rx="1" fill="currentColor" />,
+  pause: (
+    <>
+      <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" />
+      <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" />
+    </>
+  ),
   check: <path d="M5 13l4 4L19 7" />,
   error: (
     <>

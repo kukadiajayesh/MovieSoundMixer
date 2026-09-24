@@ -85,3 +85,19 @@ export const fmtOffsetShort = (ms: number): string => {
   const amount = abs < 1000 ? `${abs} ms` : `${parseFloat((abs / 1000).toFixed(3))} s`
   return `${ms < 0 ? '−' : '+'}${amount}`
 }
+
+// Clock-style time: 65 -> "1:05", 3723 -> "1:02:03".
+export const fmtClock = (sec: number): string => {
+  const s = Math.floor(sec % 60)
+  const m = Math.floor(sec / 60) % 60
+  const h = Math.floor(sec / 3600)
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+// "1:05", "1:02:03" or plain seconds ("65") -> seconds; null if unparseable.
+export const parseClock = (text: string): number | null => {
+  const parts = text.trim().split(':')
+  if (parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) return null
+  return parts.reduce((acc, p) => acc * 60 + Number(p), 0)
+}

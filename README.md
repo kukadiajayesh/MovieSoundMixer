@@ -38,8 +38,9 @@ To deliver a rich and modern visual experience, the app automatically extracts p
 ### 3. Audio Merging Suite (SxxExx Match & Manual Fusion)
 * **Automatic Matching:** Automatically parses episode numbers (`SxxExx`) in video and audio files, matching them in a visual grid with live match-preview status cards.
 * **Manual Assignment & Fusion:** Users can manually override assignments or assign media by clicking the placeholder to choose **either an audio file or a video file** (where you can select a specific audio channel from a second video to merge into the first).
-* **Per-File A/V Sync:** Each row's **Sync** chip opens a popover to shift that file's new audio track by a precise millisecond offset (slider for ±5 s, typed values up to ±10 min), negative to play it earlier or positive to delay it. The video and original audio tracks are never moved.
-* **Sync Preview:** From the same popover, pick which of the audio file's tracks to use, then render a **10, 20 or 30 second clip** from any start time with the offset applied and play it right in the app, so you can hear whether the sync is right before merging.
+* **Per-File A/V Sync:** Each row's **Sync** chip opens the Audio Sync panel to shift that file's new audio track by a precise millisecond offset (slider for ±5 s, typed values up to ±10 min), negative to play it earlier or positive to delay it. The video and original audio tracks are never moved.
+* **Sync Waveforms:** The panel draws the video's original audio and the new track (with the offset applied) one above the other over the chosen stretch of the video. Line up their peaks by dragging the new track sideways; click to jump the player there.
+* **Sync Preview & Compare:** Pick which of the audio file's tracks to use, then render a **10, 20 or 30 second clip** from any start time and play it in the app. Switch between **New track**, **Original** and **Both** without losing your place; with both playing, any remaining offset is heard as an echo. The two tracks play sample-aligned, and the picture follows them.
 * **Containers:** MKV, MP4 and WebM output. WebM re-encodes audio to Opus, and video to VP9 unless it's already VP8, VP9 or AV1.
 * **Dual Backends:** Intelligently matches operations to **FFmpeg** or **mkvmerge** depending on the files and stream selections, with full manual override toggles.
 * **GPU Hardware Acceleration:**
@@ -181,8 +182,6 @@ When merging audio tracks into target videos, the application chooses between ba
 To take the FFmpeg Audio Manager even further, the following features are planned for future development releases:
 
 1. **Subtitle Multiplexing (Mux) Support:** Detect, select, and package external/internal subtitle files (such as SRT, ASS, or VTT tracks) straight into the final MKV or MP4 containers.
-2. **Audio Waveform Visualization:** View a detailed waveform of both the source and target files inside the app for direct visual cue matching and synchronization checks.
-3. **Scrub-to-Compare In-App Preview Player:** A built-in split-pane video player with scrubbing controls to preview and compare the before-and-after audio swaps before committing to a merge.
-4. **Per-Job Estimated Time Remaining:** Real-time velocity tracking to display accurate remaining-time countdown counters for each active background encoding job.
-5. **Auto-Generated Subtitles [LOW Priority]:** Integration of lightweight, offline speech-to-text models (such as Whisper) to automatically transcribe audio tracks and produce localized subtitle tracks.
+2. **Per-Job Estimated Time Remaining:** Real-time velocity tracking to display accurate remaining-time countdown counters for each active background encoding job.
+3. **Auto-Generated Subtitles [LOW Priority]:** Integration of lightweight, offline speech-to-text models (such as Whisper) to automatically transcribe audio tracks and produce localized subtitle tracks.
 
