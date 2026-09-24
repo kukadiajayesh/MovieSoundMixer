@@ -4,6 +4,7 @@ import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
 import { getThumbnailDataUrl } from './ffmpeg/thumbnail'
 import { renderSyncPreview, cancelSyncPreview } from './ffmpeg/preview'
+import { getPeaks } from './ffmpeg/waveform'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
@@ -127,8 +128,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   })
 
   // 3c. A/V sync preview: a short clip of the video with the chosen audio
-  // track shifted by the given offset, returned as MP4 bytes for the
-  // renderer to play from a blob URL.
+  // track shifted by the given offset (MP4), plus the video's own audio over
+  // the same window (M4A) when it has any, returned as bytes for the
+  // renderer to play from blob URLs.
   ipcMain.handle(
     'render-sync-preview',
     async (
@@ -157,7 +159,8 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         if (!check.valid) return { success: false, error: check.error }
       }
       try {
-        const data = await renderSyncPreview({
+        const videoInfo = await probeStreams(payload.videoPath).catch(() => null)
+        const { clip, original } = await renderSyncPreview({
           key: String(payload.key),
           videoPath: payload.videoPath,
           audioPath: payload.audioPath,
@@ -165,8 +168,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           offsetMs,
           startSec,
           durationSec,
+          includeOriginal: !!videoInfo && videoInfo.streams.length > 0,
         })
-        return { success: true, data }
+        return { success: true, clip, original }
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -176,6 +180,34 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('cancel-sync-preview', (_event, key: string) => {
     cancelSyncPreview(String(key))
   })
+
+  // 3d. Waveform peaks (one per 5 ms, mono) for a window of one audio stream,
+  // drawn by the sync panel. The window may start before 0 (the new track
+  // shifted later); that part comes back as silence.
+  ipcMain.handle(
+    'get-sync-waveform',
+    async (_event, payload: { path: string; audioStreamIndex?: number; startSec: number; durationSec: number }) => {
+      const { startSec, durationSec } = payload
+      if (!Number.isFinite(startSec) || !Number.isFinite(durationSec) || durationSec <= 0 || durationSec > 120) {
+        return { success: false, error: 'Invalid waveform range' }
+      }
+      const check = validateInputFile(payload.path)
+      if (!check.valid) return { success: false, error: check.error }
+      const bucketMs = 5
+      try {
+        const peaks = await getPeaks({
+          path: payload.path,
+          audioStreamIndex: Math.max(0, payload.audioStreamIndex ?? 0),
+          startSec,
+          durationSec,
+          bucketMs,
+        })
+        return { success: true, peaks, bucketMs }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 
   // 4. Dependencies and GPU status
   ipcMain.handle('get-dependency-status', async () => {
@@ -266,10 +298,13 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       if (backend === 'mkvmerge' && mkvPath === null) {
         return { success: false, error: 'mkvmerge backend requested but mkvmerge is not installed' }
       }
-      // WebM only takes VP8/VP9/AV1 video and Opus/Vorbis audio, which usually
-      // means transcoding, and mkvmerge can't transcode.
-      if (backend === 'mkvmerge' && outContainer === 'webm') {
-        return { success: false, error: "mkvmerge can't write WebM. Use Auto or Force FFmpeg." }
+      // mkvmerge only writes Matroska: given an .mp4 name it still writes MKV
+      // data, and it can't transcode for WebM.
+      if (backend === 'mkvmerge' && outContainer !== 'mkv') {
+        return {
+          success: false,
+          error: `mkvmerge can only write MKV, not ${outContainer.toUpperCase()}. Use Auto or Force FFmpeg.`,
+        }
       }
       let useMkvMerge =
         backend === 'mkvmerge' ||

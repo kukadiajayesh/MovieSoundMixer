@@ -13,7 +13,7 @@ interface MergeRowProps {
   onAssignClick: () => void
   onOpenChannelPicker: (audio: MergeSource, anchor: HTMLElement) => void
   syncOpen: boolean
-  onOpenSyncPicker: (anchor: HTMLElement) => void
+  onOpenSync: () => void
   onClearAudio: () => void
   onOpenVideo: (path: string) => void
   onRetry: () => void
@@ -47,7 +47,7 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   onAssignClick,
   onOpenChannelPicker,
   syncOpen,
-  onOpenSyncPicker,
+  onOpenSync,
   onClearAudio,
   onOpenVideo,
   onRetry,
@@ -184,7 +184,7 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               className={`sync-pick ${offsetMs !== 0 ? 'own' : ''} ${syncOpen ? 'open' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
-                onOpenSyncPicker(e.currentTarget)
+                onOpenSync()
               }}
               disabled={disabled}
               aria-label={syncTip}
