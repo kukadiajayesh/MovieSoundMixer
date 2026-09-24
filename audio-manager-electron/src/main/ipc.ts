@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { probeStreams } from './ffmpeg/prober'
 import { getThumbnailDataUrl } from './ffmpeg/thumbnail'
+import { renderSyncPreview, cancelSyncPreview } from './ffmpeg/preview'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
@@ -10,6 +11,22 @@ import { enqueueJob, cancelJob, pauseQueue, resumeQueue, setConcurrency, Job } f
 import { validateInputFile, validateOutputPath, resolveOutputPath, getFileProperties } from './files/fileManager'
 import { validateSetting } from './settings/settingsManager'
 import * as db from './db/repository'
+
+// Largest A/V sync shift accepted for a merge, either direction. Keep in step
+// with MAX_OFFSET_MS in the renderer's SyncControls.
+const MAX_AUDIO_OFFSET_MS = 600_000
+
+// Video codecs (as labelled by probeStreams) that WebM can hold as-is.
+const WEBM_VIDEO_CODECS = ['VP8', 'VP9', 'AV1']
+
+// libvpx-vp9 settings per quality preset, for WebM output that has to be
+// re-encoded. Constant quality (-b:v 0 + -crf); lower cpu-used is slower
+// and better.
+const VP9_ARGS: Record<'fast' | 'balanced' | 'quality', string[]> = {
+  fast: ['-deadline', 'realtime', '-cpu-used', '8', '-crf', '36'],
+  balanced: ['-deadline', 'good', '-cpu-used', '4', '-crf', '32'],
+  quality: ['-deadline', 'good', '-cpu-used', '2', '-crf', '28'],
+}
 
 export function setupIPCHandlers(mainWindow: BrowserWindow) {
   // 1. File Dialog selection. `kind` restricts what the picker offers:
@@ -109,6 +126,57 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
     }
   })
 
+  // 3c. A/V sync preview: a short clip of the video with the chosen audio
+  // track shifted by the given offset, returned as MP4 bytes for the
+  // renderer to play from a blob URL.
+  ipcMain.handle(
+    'render-sync-preview',
+    async (
+      _event,
+      payload: {
+        key: string
+        videoPath: string
+        audioPath: string
+        audioStreamIndex?: number
+        offsetMs?: number
+        startSec?: number
+        durationSec: number
+      },
+    ) => {
+      const offsetMs = Math.round(payload.offsetMs ?? 0)
+      const startSec = Math.max(0, payload.startSec ?? 0)
+      const durationSec = payload.durationSec
+      if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > MAX_AUDIO_OFFSET_MS) {
+        return { success: false, error: `Audio offset must be within ±${MAX_AUDIO_OFFSET_MS / 1000} s` }
+      }
+      if (!Number.isFinite(startSec) || ![10, 20, 30].includes(durationSec)) {
+        return { success: false, error: 'Invalid preview range' }
+      }
+      for (const p of [payload.videoPath, payload.audioPath]) {
+        const check = validateInputFile(p)
+        if (!check.valid) return { success: false, error: check.error }
+      }
+      try {
+        const data = await renderSyncPreview({
+          key: String(payload.key),
+          videoPath: payload.videoPath,
+          audioPath: payload.audioPath,
+          audioStreamIndex: Math.max(0, payload.audioStreamIndex ?? 0),
+          offsetMs,
+          startSec,
+          durationSec,
+        })
+        return { success: true, data }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle('cancel-sync-preview', (_event, key: string) => {
+    cancelSyncPreview(String(key))
+  })
+
   // 4. Dependencies and GPU status
   ipcMain.handle('get-dependency-status', async () => {
     let ffmpegAvailable = false
@@ -162,11 +230,20 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         // User-picked hardware encoder (from the GPU Acceleration dropdown).
         // Omitted/empty means "auto-pick the best available".
         encoder?: string
+        // A/V sync correction for the added audio track, in milliseconds:
+        // positive delays it, negative plays it earlier. The video and any
+        // original audio tracks are never shifted. Omitted means no shift.
+        audioOffsetMs?: number
       },
     ) => {
       const { id, videoPath, audioPath, outContainer, outFolder, copyVideo, mergeMode, duration, overwrite } = payload
       const backend = payload.backend ?? 'auto'
       const audioStreamIndex = Math.max(0, payload.audioStreamIndex ?? 0)
+      const audioOffsetMs = Math.round(payload.audioOffsetMs ?? 0)
+
+      if (!Number.isFinite(audioOffsetMs) || Math.abs(audioOffsetMs) > MAX_AUDIO_OFFSET_MS) {
+        return { success: false, error: `Audio offset must be within ±${MAX_AUDIO_OFFSET_MS / 1000} s` }
+      }
 
       for (const p of [videoPath, audioPath]) {
         const check = validateInputFile(p)
@@ -189,11 +266,19 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       if (backend === 'mkvmerge' && mkvPath === null) {
         return { success: false, error: 'mkvmerge backend requested but mkvmerge is not installed' }
       }
+      // WebM only takes VP8/VP9/AV1 video and Opus/Vorbis audio, which usually
+      // means transcoding, and mkvmerge can't transcode.
+      if (backend === 'mkvmerge' && outContainer === 'webm') {
+        return { success: false, error: "mkvmerge can't write WebM. Use Auto or Force FFmpeg." }
+      }
       let useMkvMerge =
         backend === 'mkvmerge' ||
         (backend === 'auto' && outContainer === 'mkv' && mkvPath !== null)
 
       let args: string[] = []
+      // Explains in the job log when the output differs from the chosen
+      // options (e.g. WebM forcing a re-encode despite "Copy video stream").
+      let note: string | undefined
       // Options scoping `audioPath` down to exactly the chosen audio track —
       // needed because it may now be a whole video (with its own video/
       // subtitle/other-audio tracks) rather than a plain audio file.
@@ -207,6 +292,10 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         if (audioTracks.length > 0) {
           const track = audioTracks[Math.min(audioStreamIndex, audioTracks.length - 1)]
           audioSourceOpts = ['--no-video', '--no-subtitles', '--audio-tracks', String(track.id)]
+          if (audioOffsetMs !== 0) {
+            // A negative shift makes mkvmerge drop whatever lands before 0.
+            audioSourceOpts.push('--sync', `${track.id}:${audioOffsetMs}`)
+          }
         } else {
           // Couldn't identify audioPath's tracks — don't risk an unscoped
           // mkvmerge command pulling in a donor video's other tracks.
@@ -225,16 +314,46 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         }
       } else {
         // Fallback or default FFmpeg merging engine
+        // What's in the video decides the audio output numbering and whether
+        // its video can go into WebM untouched. If probing fails, assume one
+        // audio track and a codec WebM can't take; both fail safe.
+        const videoInfo = await probeStreams(videoPath).catch(() => null)
+        const videoHasAudio = videoInfo ? videoInfo.streams.length > 0 : true
+        const webm = outContainer === 'webm'
+
         args = ['-y', '-i', videoPath, '-i', audioPath]
 
         if (mergeMode === 'replace') {
           args.push('-map', '0:v:0', '-map', `1:a:${audioStreamIndex}`)
         } else {
-          args.push('-map', '0:v:0', '-map', '0:a:0', '-map', `1:a:${audioStreamIndex}`)
+          // The trailing ? lets a video with no audio of its own through.
+          args.push('-map', '0:v:0', '-map', '0:a:0?', '-map', `1:a:${audioStreamIndex}`)
+        }
+        // Output position of the added track among the output's audio streams.
+        const addedTrack = mergeMode === 'secondary' && videoHasAudio ? 1 : 0
+
+        if (audioOffsetMs !== 0) {
+          // Filter only the added track. Padding with silence (or trimming
+          // the start) keeps sync even in players that ignore MP4 edit
+          // lists, and a per-stream filter, unlike -filter_complex, keeps the
+          // track's language/title tags. The index must be right: FFmpeg
+          // silently ignores a filter aimed at a stream that doesn't exist.
+          const filter =
+            audioOffsetMs > 0
+              ? `adelay=delays=${audioOffsetMs}:all=1`
+              : `atrim=start=${(-audioOffsetMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`
+          args.push(`-filter:a:${addedTrack}`, filter)
         }
 
-        if (copyVideo) {
+        const webmCopyOk = !!videoInfo?.videoCodec && WEBM_VIDEO_CODECS.includes(videoInfo.videoCodec)
+        if (copyVideo && (!webm || webmCopyOk)) {
           args.push('-c:v', 'copy')
+        } else if (webm) {
+          // Hardware encoders here are H.264/HEVC only, which WebM can't hold.
+          args.push('-c:v', 'libvpx-vp9', '-b:v', '0', '-row-mt', '1', ...VP9_ARGS[payload.quality ?? 'balanced'])
+          if (copyVideo) {
+            note = `WebM can't hold ${videoInfo?.videoCodec ?? 'this'} video, so it's being re-encoded to VP9 (slower than a copy)`
+          }
         } else {
           // Re-encoding: use a hardware encoder when GPU acceleration is enabled
           // and one is available, otherwise fall back to CPU libx264.
@@ -249,7 +368,11 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           args.push(...getGPUEncoderArgs(encoder ?? 'libx264', payload.quality ?? 'balanced'))
         }
 
-        args.push('-c:a', 'aac', '-b:a', '192k', outPath)
+        if (webm) {
+          args.push('-c:a', 'libopus', '-b:a', '192k', outPath)
+        } else {
+          args.push('-c:a', 'aac', '-b:a', '192k', outPath)
+        }
       }
 
       const job: Job = {
@@ -265,7 +388,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       }
 
       enqueueJob(job)
-      return { success: true, outPath }
+      return { success: true, outPath, note }
     },
   )
 

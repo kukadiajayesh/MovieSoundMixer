@@ -70,10 +70,13 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
         // Split stderr by lines
         const lines = stderrData.split('\n')
 
-        // Regular expressions to match Audio/Video Streams & Duration
-        const audioStreamRegex = /Stream #0:(\d+)(?:\(([^)]+)\))?:\s*Audio:\s*([^,\s\()]+)/i
+        // Regular expressions to match Audio/Video Streams & Duration. MP4/MOV
+        // (and some TS) streams carry a container ID before the language,
+        // e.g. "Stream #0:1[0x2](eng): Audio: aac ...", hence the optional [..].
+        const audioStreamRegex = /Stream #0:(\d+)(?:\[[^\]]*\])?(?:\(([^)]+)\))?:\s*Audio:\s*([^,\s\()]+)/i
         // e.g. "Stream #0:0(und): Video: h264 (High), yuv420p, 1920x1080 [SAR ...]"
-        const videoStreamRegex = /Stream #0:\d+(?:\([^)]+\))?:\s*Video:\s*([^,\s\()]+).*?(\d{2,5})x(\d{2,5})/i
+        const videoStreamRegex =
+          /Stream #0:\d+(?:\[[^\]]*\])?(?:\([^)]+\))?:\s*Video:\s*([^,\s\()]+).*?(\d{2,5})x(\d{2,5})/i
         const anyStreamRegex = /Stream #0:\d+/
         const durationRegex = /Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})/i
         const titleRegex = /^\s*title\s*:\s*(.+?)\s*$/i

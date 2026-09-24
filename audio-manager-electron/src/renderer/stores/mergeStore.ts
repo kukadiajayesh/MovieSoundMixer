@@ -35,6 +35,9 @@ export interface MergePair {
   progress: number // 0..1
   error?: string
   outputPath?: string // set once the job succeeds, so the file can be opened
+  // A/V sync shift for the added audio track in ms: positive delays it,
+  // negative plays it earlier. Unset means no shift.
+  audioOffsetMs?: number
 }
 
 /** Extract a normalized SxxExx episode tag from a filename, if present. */
@@ -43,6 +46,11 @@ export const parseEpisode = (name: string): string | null => {
   if (!m) return null
   return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`
 }
+
+/** The picked stream's position among the source's audio streams — the "N"
+ *  in FFmpeg's `1:a:N` (the stream picker stores absolute stream indexes). */
+export const audioOrdinal = (audio: MergeSource): number =>
+  Math.max(0, (audio.streams ?? []).findIndex((s) => s.index === audio.selectedStreamIndex))
 
 const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts']
 
@@ -55,6 +63,7 @@ interface MergeState {
   addFiles: (files: MergeSource[]) => void
   assignAudio: (pairId: string, audio: MergeSource | null) => void
   updateAudioStreamIndex: (pairId: string, streamIndex: number) => void
+  setPairOffset: (pairId: string, ms: number) => void
   updateSourceMeta: (pairId: string, side: 'video' | 'audio', meta: Partial<MergeSource>) => void
   removePair: (id: string) => void
   clearPairs: () => void
@@ -102,9 +111,16 @@ export const useMergeStore = create<MergeState>((set) => ({
       return rematch([...state.pairs, ...newPairs], pool)
     }),
 
+  // A different audio file needs its own sync, so any per-file offset is
+  // dropped along with the old one.
   assignAudio: (pairId, audio) =>
     set((state) => ({
-      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audio } : p)),
+      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audio, audioOffsetMs: undefined } : p)),
+    })),
+
+  setPairOffset: (pairId, ms) =>
+    set((state) => ({
+      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audioOffsetMs: ms } : p)),
     })),
 
   updateAudioStreamIndex: (pairId, streamIndex) =>
