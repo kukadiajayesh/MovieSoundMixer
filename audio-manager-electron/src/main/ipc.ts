@@ -5,6 +5,7 @@ import { probeStreams } from './ffmpeg/prober'
 import { getThumbnailDataUrl } from './ffmpeg/thumbnail'
 import { renderSyncPreview, cancelSyncPreview } from './ffmpeg/preview'
 import { getPeaks } from './ffmpeg/waveform'
+import { mkvmergeStartShift } from './ffmpeg/startShift'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
 import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
@@ -314,6 +315,8 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       // Explains in the job log when the output differs from the chosen
       // options (e.g. WebM forcing a re-encode despite "Copy video stream").
       let note: string | undefined
+      // Informational job-log line (e.g. a timing correction applied).
+      let detail: string | undefined
       // Options scoping `audioPath` down to exactly the chosen audio track —
       // needed because it may now be a whole video (with its own video/
       // subtitle/other-audio tracks) rather than a plain audio file.
@@ -325,11 +328,26 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         // `mkvmerge -J` (works on any container mkvmerge can read, not just .mkv).
         const audioTracks = (identifyMkv(audioPath) ?? []).filter((t) => t.type === 'audio')
         if (audioTracks.length > 0) {
-          const track = audioTracks[Math.min(audioStreamIndex, audioTracks.length - 1)]
+          const ordinal = Math.min(audioStreamIndex, audioTracks.length - 1)
+          const track = audioTracks[ordinal]
           audioSourceOpts = ['--no-video', '--no-subtitles', '--audio-tracks', String(track.id)]
-          if (audioOffsetMs !== 0) {
+          // mkvmerge lines the two files up differently from FFmpeg (it
+          // ignores MP4 edit-list and MP3 gapless skips, and keeps a
+          // negative MKV start that FFmpeg moves to 0), so correct by the
+          // difference; the new track then lands where the sync preview and
+          // an FFmpeg merge put it. See ffmpeg/startShift.ts.
+          const [videoShift, audioShift] = await Promise.all([
+            mkvmergeStartShift(videoPath, { video: true, audio: mergeMode !== 'replace' }),
+            mkvmergeStartShift(audioPath, { audioOrdinal: ordinal }),
+          ])
+          const correctionMs = Math.round((videoShift - audioShift) * 1000)
+          const syncMs = audioOffsetMs + correctionMs
+          if (correctionMs !== 0) {
+            detail = `correcting the new track by ${correctionMs > 0 ? '+' : ''}${correctionMs} ms so mkvmerge matches the preview`
+          }
+          if (syncMs !== 0) {
             // A negative shift makes mkvmerge drop whatever lands before 0.
-            audioSourceOpts.push('--sync', `${track.id}:${audioOffsetMs}`)
+            audioSourceOpts.push('--sync', `${track.id}:${syncMs}`)
           }
         } else {
           // Couldn't identify audioPath's tracks — don't risk an unscoped
@@ -423,7 +441,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       }
 
       enqueueJob(job)
-      return { success: true, outPath, note }
+      return { success: true, outPath, note, detail }
     },
   )
 
