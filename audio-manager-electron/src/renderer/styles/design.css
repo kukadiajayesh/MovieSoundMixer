@@ -654,6 +654,33 @@ body {
 .stream-pick .ch { color: var(--fg-3); }
 .stream-pick .caret { color: var(--fg-3); margin-left: auto; width: 10px; height: 10px; }
 
+/* Channel chip + per-file sync chip, side by side under the audio file. */
+.mc-chips { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.mc-chips .stream-pick { flex: 1; min-width: 0; }
+.sync-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.sync-pick .ico { width: 11px; height: 11px; }
+.sync-pick .lbl { color: var(--fg-2); }
+.sync-pick .val { font-variant-numeric: tabular-nums; }
+.sync-pick:hover:not(:disabled), .sync-pick.open { background: var(--bg-hover); border-color: var(--accent); }
+/* A file with a shift set stands out from unshifted ones. */
+.sync-pick.own { border-color: var(--audio); }
+.sync-pick.own .ico, .sync-pick.own .val { color: var(--audio); font-weight: 600; }
+.sync-pick:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.sync-pick:disabled { cursor: not-allowed; }
+
 /* Status cell */
 .status {
   display: inline-flex;
@@ -1094,6 +1121,95 @@ body {
   display: inline-block;
 }
 .radio-row .desc { color: var(--text-subtitle); font-size: 13px; font-weight: 400; margin-top: 1px; }
+.radio-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.field-note { font-size: 12px; color: var(--text-subtitle); margin-top: 6px; line-height: 1.4; }
+
+/* Audio sync controls (inside a row's sync popover). */
+.sync-row { display: flex; align-items: center; gap: 10px; }
+.sync-end { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+/* Track fills from 0 to the thumb; --fill-from / --fill-to are set inline. */
+.sync-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--line) var(--fill-from),
+    var(--accent) var(--fill-from),
+    var(--accent) var(--fill-to),
+    var(--line) var(--fill-to)
+  );
+  cursor: pointer;
+}
+.sync-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.sync-slider:focus-visible { outline: none; }
+.sync-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+.sync-input { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-3); }
+.sync-input input {
+  width: 84px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sync-input input:focus { outline: none; border-color: var(--accent); }
+/* Native spin buttons follow color-scheme, which otherwise stays light. */
+:root[data-theme="dark"] .sync-input input { color-scheme: dark; }
+
+/* Dimmed page behind the sync popover (.popover sits at z-index 50). */
+.sync-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(15, 23, 42, 0.28);
+  /* A light blur keeps the page recognisable but clearly out of focus. */
+  backdrop-filter: blur(3px);
+  animation: syncBackdropIn 0.15s ease-out;
+}
+:root[data-theme="dark"] .sync-backdrop { background: rgba(0, 0, 0, 0.5); }
+@keyframes syncBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sync-backdrop { animation: none; } }
+
+/* Per-file sync popover (opened from a row's Sync chip). */
+.popover.sync-pop {
+  width: 440px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sp-head { font-size: 13px; font-weight: 600; color: var(--fg); }
+.sp-file { font-size: 11px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: -6px; }
+.sp-controls .sp-desc { flex: 1; font-size: 12px; color: var(--fg-2); }
+.sp-preview { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.sp-track select { width: 100%; }
+.sp-lengths { flex-shrink: 0; }
+.sp-lengths button { padding-left: 10px; padding-right: 10px; white-space: nowrap; }
+.sync-input input.sp-start { width: 64px; text-align: left; }
+.sync-input input.sp-start.invalid { border-color: var(--danger); }
+.sp-go { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.sp-go .ico { width: 11px; height: 11px; }
+.sp-video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: var(--radius-sm); display: block; }
+.sp-note { font-size: 11px; color: var(--fg-3); }
+.sp-note.warn { color: var(--warn-text); }
+.sp-note.err { color: var(--danger); }
 
 
 /* ─── Empty state ────────────────────────────────────────────────────── */

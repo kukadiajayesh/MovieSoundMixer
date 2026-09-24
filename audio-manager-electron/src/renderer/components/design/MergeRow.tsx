@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { MergePair, MergeSource } from '../../stores/mergeStore'
-import { channelLabel, containerLabel, fileExt, fmtDuration, fmtSize } from '../../lib/mediaLabels'
+import { channelLabel, containerLabel, fileExt, fmtDuration, fmtOffset, fmtOffsetShort, fmtSize } from '../../lib/mediaLabels'
 import { getVideoThumbnail } from '../../lib/thumbnailCache'
 import { Icon } from './Icon'
 import { StatusCell, RowStatus } from './StatusCell'
@@ -12,6 +12,8 @@ interface MergeRowProps {
   disabled?: boolean
   onAssignClick: () => void
   onOpenChannelPicker: (audio: MergeSource, anchor: HTMLElement) => void
+  syncOpen: boolean
+  onOpenSyncPicker: (anchor: HTMLElement) => void
   onClearAudio: () => void
   onOpenVideo: (path: string) => void
   onRetry: () => void
@@ -27,6 +29,8 @@ const StreamBadges: React.FC<{ source: MergeSource; pill?: boolean }> = ({ sourc
   const picked = source.streams.find((s) => s.index === source.selectedStreamIndex) ?? source.streams[0]
   const ch = channelLabel(picked.channels)
   const cls = `mc-tag${pill ? ' pill' : ''}`
+  // probeSource stands in an 'unknown' stream when a file has no audio.
+  if (picked.codec === 'unknown') return <span className={cls}>No audio</span>
   return (
     <>
       <span className={cls}>{picked.codec.toUpperCase()}</span>
@@ -42,6 +46,8 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   disabled = false,
   onAssignClick,
   onOpenChannelPicker,
+  syncOpen,
+  onOpenSyncPicker,
   onClearAudio,
   onOpenVideo,
   onRetry,
@@ -51,6 +57,9 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   const videoDuration = fmtDuration(p.video.duration)
   const audioDuration = fmtDuration(p.audio?.duration)
   const videoSize = fmtSize(p.video.size)
+
+  const offsetMs = p.audioOffsetMs ?? 0
+  const syncTip = `Audio sync: ${offsetMs === 0 ? 'no shift' : fmtOffset(offsetMs)}. Click to adjust or preview.`
 
   const [thumb, setThumb] = useState<string | null>(null)
   useEffect(() => {
@@ -150,6 +159,7 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               </span>
             </div>
           </div>
+          <div className="mc-chips">
           {p.audio.streams && p.audio.streams.length > 0 && (() => {
             const picked =
               p.audio!.streams!.find((s) => s.index === p.audio!.selectedStreamIndex) ?? p.audio!.streams![0]
@@ -169,6 +179,23 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               </span>
             )
           })()}
+            <button
+              type="button"
+              className={`sync-pick ${offsetMs !== 0 ? 'own' : ''} ${syncOpen ? 'open' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenSyncPicker(e.currentTarget)
+              }}
+              disabled={disabled}
+              aria-label={syncTip}
+              aria-expanded={syncOpen}
+              data-tip={disabled ? undefined : syncTip}
+            >
+              <Icon name="waveform" className="ico" />
+              <span className="lbl">Sync</span>
+              <span className="val">{offsetMs === 0 ? '0 ms' : fmtOffsetShort(offsetMs)}</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div

@@ -968,12 +968,39 @@ Verified: `tsc` clean for renderer + main, vite production build OK, app launche
 - **Manual Assignment Polish:** Simplified the manual audio/video assignment placeholder in `MergeRow.tsx` by removing the "No match" alert, creating a cleaner and more actionable 'Click to pick audio / video file' message.
 - **Future Roadmap:** Formulated the Phase 9 feature roadmap (A/V sync sliders, subtitles muxing, waveform visualization, live player scrub-compare, remaining time count, Whisper transcription) in both README.md and TASK_BOARD.md.
 
+**2026-09-24:** Per-file A/V sync offset with clip preview (Phase 9.1) — done
+- **Per-row Sync chip** (`MergeRow.tsx`): sits beside the channel chip in each row's audio card and shows that file's offset ("0 ms", "+750 ms", "−1.25 s"), highlighted in teal once it's non-zero. Offsets are per file only, with no batch-wide default (the first version's full-width Audio Sync card was removed at the user's request). Stored as `audioOffsetMs` on the pair (`mergeStore.ts`); cleared when the pair's audio file is reassigned, and not saved between sessions.
+- **Sync popover** (`SyncPopover.tsx`, shared controls in `SyncControls.tsx`): slider over ±5 s in 10 ms steps, a ms box for typed values up to ±10 min, and Reset. It opens below the chip, or above it when there isn't room, over a dimmed, lightly blurred backdrop. It focuses the ms box and closes on Escape or a click outside (including on the backdrop).
+- **Clip preview** in the same popover: 10 / 20 / 30 s from a typed start time (m:ss or seconds, capped so the clip fits the video). The `render-sync-preview` IPC (`ffmpeg/preview.ts`) renders a ≤540p ultrafast H.264 MP4 of the video plus only the new track, shifted the same way a merge shifts it. It re-encodes rather than stream-copying, so the clip starts on the exact frame, not a keyframe. The bytes come back over IPC and play from a blob URL. The temp file is deleted straight away, and a newer render or closing the popover kills the one in flight. An **Audio track** picker above the preview lists the audio file's tracks (title · language · codec/channels). It's tied to the row's channel chip, so the track you preview is the track that gets merged. The clip is marked stale once the offset, track, start or length changes.
+- **Backend** (`ipc.ts`, `start-merge`): `audioOffsetMs` param, rejected beyond ±600,000 ms. mkvmerge gets `--sync <trackId>:<ms>` on the chosen audio track. FFmpeg gets `adelay` (delay) or `atrim` + `asetpts` (advance) as a per-stream filter on the added track only, so the video and original tracks are never shifted. Not `-filter_complex`: FFmpeg drops the track's language/title tags on filter-graph outputs. The filter's output index comes from probing the video (1 when an original track is kept, else 0). It must be right, because FFmpeg silently ignores a filter aimed at a stream that doesn't exist.
+- Each pair's job log line notes its shift ("audio shifted 750 ms later").
+
+Verified in the running app (scratch `--user-data-dir`, files added by real drag-and-drop over CDP, beep test media measured with `silencedetect`, each shift compared against a 0 ms row in the same batch):
+- Several rows with different offsets in one batch each got their own shift: mkvmerge MKV keep-original +500.0 / −1249.8 ms, FFmpeg MP4 replace +500.0 / −1250.0 ms, FFmpeg MKV keep-original +500.0 / −1250.2 ms, and after the card was removed, mkvmerge +750.0 ms next to an unshifted row. Original tracks unmoved; language tags kept.
+- Preview clips decoded in the renderer put the beep exactly where expected (0 ms, −1250 ms, +500 ms with silence padding, and +500 ms from a 0:02 start). No preview files left in temp afterwards.
+- Popover track picker: switching a two-track donor from track 1 to track 2 updated the row's chip, marked the clip stale, and the new clip's beep moved by exactly the 2.000 s gap between the tracks.
+- Chip, popover and backdrop checked in dark and light themes. Main `tsc` clean, renderer `tsc` has only the known `App.tsx` error, and no new lint errors.
+
+Merge fixes (same day):
+- **WebM output always failed through FFmpeg**, because the merge encoded audio to AAC and copied H.264 video, neither of which WebM allows. WebM now encodes all audio to Opus (`libopus` 192k) and copies the video only if it's already VP8/VP9/AV1; otherwise it re-encodes to VP9 (`libvpx-vp9`, constant quality, `-deadline`/`-cpu-used`/`-crf` per quality preset). When "Copy video stream" is on but can't be honored, the job log gets a warning saying why. mkvmerge can't write WebM: the Force mkvmerge option is disabled with the reason while WebM is selected, choosing WebM moves a forced mkvmerge back to Auto, and `start-merge` rejects that combination. A note under the Container control says WebM re-encodes and is slower. Verified in the app: 5 WebM merges (H.264 MKV/MP4 sources, videos with and without audio, a VP9 source that was copied) came out as VP9 + Opus with correct +500 ms shifts.
+- **"Add as secondary track" failed through FFmpeg when the video had no audio**, because `-map 0:a:0` matched nothing. The map is now `0:a:0?`, and the offset filter targets the right output stream. Verified with MKV and MP4 videos that have no audio.
+- **Prober missed every stream in MP4/M4A/MOV files** (`ffmpeg/prober.ts`): ffmpeg prints them as `Stream #0:1[0x2](eng): Audio: …`, and the regexes didn't allow the `[0x…]` ID. Those files showed a made-up "UNKNOWN 2ch" track, with no language and no video codec or resolution. Both regexes now accept the ID. The start-merge fixes above rely on this.
+- Videos with no audio now show a "No audio" badge instead of the fake "UNKNOWN Stereo".
+
+Still open:
+- **Tooling:** renderer `tsc` fails on the unused `version` in `App.tsx`; ESLint 9 ignores `.eslintrc.json` unless run with `ESLINT_USE_FLAT_CONFIG=false`.
+
 ---
 
 ## PHASE 9: Future Roadmap & Post-Launch Features
 
 ### 9.1 Audio/Video Synchronization
-- [ ] **A/V Sync Offset Controls:** Add millisecond-level audio/video synchronization offset controls in the merge options to correct out-of-sync audio tracks.
+- [x] **A/V Sync Offset Controls:** Add millisecond-level audio/video synchronization offset controls in the merge options to correct out-of-sync audio tracks.
+  - [x] Per-file offset from each row's Sync chip: ±5 s slider, typed value up to ±10 min, Reset (`MergeRow.tsx`, `SyncPopover.tsx`, `SyncControls.tsx`)
+  - [x] `start-merge` applies `audioOffsetMs` to the added track only: mkvmerge `--sync`, FFmpeg `adelay` / `atrim` per-stream filter (`ipc.ts`)
+  - [x] 10 / 20 / 30 s clip preview with the offset applied, played in the popover (`render-sync-preview`, `ffmpeg/preview.ts`)
+  - [x] Audio track picker in the popover, shared with the row's channel chip; dimmed, blurred backdrop while it's open
+  - [x] Verified in the app on both backends and both merge modes (see the 2026-09-24 notes)
 
 ### 9.2 Subtitle & Stream Management
 - [ ] **Subtitle Mux Support:** Add options to detect, select, and multiplex external/internal subtitle files (SRT, ASS, VTT) into the final MKV/MP4 containers.

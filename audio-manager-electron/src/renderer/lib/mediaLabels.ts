@@ -70,3 +70,18 @@ export const fmtDuration = (seconds?: number): string | null => {
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
 }
+
+// Describes an A/V sync offset in words — positive offsets delay the audio:
+// 250 -> "250 ms later", -1500 -> "1.5 s earlier".
+export const fmtOffset = (ms: number): string => {
+  const abs = Math.abs(ms)
+  const amount = abs < 1000 ? `${abs} ms` : `${parseFloat((abs / 1000).toFixed(3))} s`
+  return `${amount} ${ms < 0 ? 'earlier' : 'later'}`
+}
+
+// Compact signed form for tight spots: 250 -> "+250 ms", -1500 -> "−1.5 s".
+export const fmtOffsetShort = (ms: number): string => {
+  const abs = Math.abs(ms)
+  const amount = abs < 1000 ? `${abs} ms` : `${parseFloat((abs / 1000).toFixed(3))} s`
+  return `${ms < 0 ? '−' : '+'}${amount}`
+}

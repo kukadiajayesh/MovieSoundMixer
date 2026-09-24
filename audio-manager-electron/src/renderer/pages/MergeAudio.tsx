@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useMergeStore, MergePair, MergeSource, isVideoFile } from '../stores/mergeStore'
+import { useMergeStore, MergePair, MergeSource, isVideoFile, audioOrdinal } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore, ThemeType } from '../stores/themeStore'
+import { fmtOffset } from '../lib/mediaLabels'
+import { SyncPopover } from '../components/design/SyncPopover'
 import { Icon, IconName } from '../components/design/Icon'
 import { Dropzone } from '../components/design/Dropzone'
 import { MergeRow } from '../components/design/MergeRow'
@@ -58,7 +60,8 @@ const toRowStatus = (status: MergePair['status']): RowStatus => {
 }
 
 export const MergeAudio: React.FC = () => {
-  const { pairs, unmatchedAudios, addFiles, assignAudio, updateAudioStreamIndex, clearPairs } = useMergeStore()
+  const { pairs, unmatchedAudios, addFiles, assignAudio, updateAudioStreamIndex, setPairOffset, clearPairs } =
+    useMergeStore()
   const running = useJobStore((s) => s.running)
   const overall = useJobStore(useShallow(selectOverall))
   const jobs = useJobStore((s) => s.jobs)
@@ -75,6 +78,7 @@ export const MergeAudio: React.FC = () => {
   const [encoder, setEncoder] = useState<string>('') // '' = auto-pick best
   const [backendAvailable, setBackendAvailable] = useState({ ffmpeg: false, mkvmerge: false })
   const [assigning, setAssigning] = useState<string | null>(null)
+  const [syncPicker, setSyncPicker] = useState<{ pairId: string; anchor: HTMLElement } | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
@@ -140,6 +144,9 @@ export const MergeAudio: React.FC = () => {
   }, [])
 
   const matched = pairs.filter((p) => p.audio).length
+  const syncPickerPair = syncPicker ? pairs.find((p) => p.id === syncPicker.pairId) : undefined
+  // Stable, so the popover's listeners aren't re-attached on every render.
+  const closeSyncPicker = useCallback(() => setSyncPicker(null), [])
 
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
@@ -306,10 +313,8 @@ export const MergeAudio: React.FC = () => {
 
       // FFmpeg maps audio by ordinal (a:N) — translate the absolute stream
       // index picked in the channel popover, same convention as Extract Audio.
-      const audioStreamIndex = Math.max(
-        0,
-        (p.audio!.streams ?? []).findIndex((s) => s.index === p.audio!.selectedStreamIndex),
-      )
+      const audioStreamIndex = audioOrdinal(p.audio!)
+      const offsetMs = p.audioOffsetMs ?? 0
 
       // The actual pipeline is a single pass: the chosen audio track is
       // selected from the source audio file and muxed directly onto the
@@ -317,10 +322,11 @@ export const MergeAudio: React.FC = () => {
       // is no separate "extract to a temp file" step. Log that plainly so
       // the job log reflects what really happens rather than implying a
       // two-step extract-then-append.
+      const shift = offsetMs !== 0 ? `, audio shifted ${fmtOffset(offsetMs)}` : ''
       useJobStore
         .getState()
         .addLog(
-          `${p.video.name}: selecting audio track #${audioStreamIndex} from "${p.audio!.name}" and muxing it directly onto "${p.video.name}" (single-pass, no intermediate extract step)`,
+          `${p.video.name}: selecting audio track #${audioStreamIndex} from "${p.audio!.name}" and muxing it directly onto "${p.video.name}" (single-pass, no intermediate extract step)${shift}`,
         )
 
       const res = await window.electron.ipcRenderer.invoke('start-merge', {
@@ -336,7 +342,11 @@ export const MergeAudio: React.FC = () => {
         backend,
         quality,
         encoder: encoder || undefined,
+        audioOffsetMs: offsetMs,
       })
+      if (res?.success && res.note) {
+        useJobStore.getState().addLog(`${p.video.name}: ${res.note}`, 'warn')
+      }
       if (!res?.success) {
         useMergeStore.getState().updatePairStatus(p.id, 'error', res?.error || 'Failed to enqueue')
         useJobStore.getState().finishJob(p.id, false)
@@ -518,7 +528,13 @@ export const MergeAudio: React.FC = () => {
                   setAssigning(p.id)
                   handleAddFiles(p.id)
                 }}
+                syncOpen={syncPicker?.pairId === p.id}
+                onOpenSyncPicker={(anchor) => {
+                  setChannelPicker(null)
+                  setSyncPicker((prev) => (prev && prev.pairId === p.id ? null : { pairId: p.id, anchor }))
+                }}
                 onOpenChannelPicker={(audio, anchor) => {
+                  setSyncPicker(null)
                   setChannelPicker((prev) =>
                     prev && prev.pairId === p.id ? null : { pairId: p.id, audio, anchor }
                   )
@@ -534,6 +550,16 @@ export const MergeAudio: React.FC = () => {
         </div>
       )}
 
+
+      {syncPicker && syncPickerPair?.audio && !running && (
+        <SyncPopover
+          pair={syncPickerPair}
+          anchor={syncPicker.anchor}
+          onChange={(ms) => setPairOffset(syncPicker.pairId, ms)}
+          onPickTrack={(index) => updateAudioStreamIndex(syncPicker.pairId, index)}
+          onClose={closeSyncPicker}
+        />
+      )}
 
       {channelPicker && (
         <StreamPicker
@@ -628,8 +654,12 @@ export const MergeAudio: React.FC = () => {
                 {
                   id: 'mkvmerge',
                   lbl: 'Force mkvmerge',
-                  desc: 'External track first, all originals kept',
+                  desc:
+                    container === 'webm'
+                      ? "Can't write WebM, which needs re-encoding"
+                      : 'External track first, all originals kept',
                   available: backendAvailable.mkvmerge,
+                  disabled: container === 'webm',
                 },
                 {
                   id: 'ffmpeg',
@@ -637,10 +667,16 @@ export const MergeAudio: React.FC = () => {
                   desc: 'Compatible with more containers',
                   available: backendAvailable.ffmpeg,
                 },
-              ] as Array<{ id: Backend; lbl: string; desc: string; available?: boolean }>
+              ] as Array<{ id: Backend; lbl: string; desc: string; available?: boolean; disabled?: boolean }>
             ).map((o) => (
-              <label key={o.id} className="radio-row">
-                <input type="radio" name="backend" checked={backend === o.id} onChange={() => setBackend(o.id)} />
+              <label key={o.id} className={`radio-row ${o.disabled ? 'is-disabled' : ''}`}>
+                <input
+                  type="radio"
+                  name="backend"
+                  checked={backend === o.id}
+                  disabled={o.disabled}
+                  onChange={() => setBackend(o.id)}
+                />
                 <div>
                   <div className="lbl">
                     {o.lbl}
@@ -664,11 +700,25 @@ export const MergeAudio: React.FC = () => {
             <label>Container</label>
             <div className="seg">
               {(['mkv', 'mp4', 'webm'] as const).map((c) => (
-                <button key={c} className={container === c ? 'on' : ''} onClick={() => setContainer(c)}>
+                <button
+                  key={c}
+                  className={container === c ? 'on' : ''}
+                  onClick={() => {
+                    setContainer(c)
+                    // mkvmerge can't write WebM; don't leave it selected.
+                    if (c === 'webm' && backend === 'mkvmerge') setBackend('auto')
+                  }}
+                >
                   {c.toUpperCase()}
                 </button>
               ))}
             </div>
+            {container === 'webm' && (
+              <div className="field-note">
+                WebM re-encodes audio to Opus, and video to VP9 unless it&apos;s already VP8, VP9 or AV1. Expect it to be
+                slower than MKV or MP4.
+              </div>
+            )}
           </div>
           <div>
             {(
