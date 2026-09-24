@@ -347,6 +347,9 @@ export const MergeAudio: React.FC = () => {
       if (res?.success && res.note) {
         useJobStore.getState().addLog(`${p.video.name}: ${res.note}`, 'warn')
       }
+      if (res?.success && res.detail) {
+        useJobStore.getState().addLog(`${p.video.name}: ${res.detail}`)
+      }
       if (!res?.success) {
         useMergeStore.getState().updatePairStatus(p.id, 'error', res?.error || 'Failed to enqueue')
         useJobStore.getState().finishJob(p.id, false)

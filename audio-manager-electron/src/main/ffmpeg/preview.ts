@@ -82,6 +82,11 @@ export async function renderSyncPreview(req: SyncPreviewRequest): Promise<SyncPr
     '-map', '0:v:0', '-map', `1:a:${req.audioStreamIndex}`,
     '-vf', "scale=-2:'trunc(min(540,ih)/2)*2'",
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-pix_fmt', 'yuv420p',
+    // Keep each frame's own timestamp at full precision. By default frames
+    // are re-timed on a 1/fps clock, which moves the picture by up to half a
+    // frame (~20 ms) against the audio when the source's frames sit off that
+    // grid (e.g. an MKV whose video starts at 21 ms).
+    '-fps_mode', 'passthrough', '-enc_time_base:v', '1:90000',
     '-af', audioFilter,
     '-c:a', 'aac', '-b:a', '160k', '-ac', '2',
     // apad makes the audio endless (so a track that ends early still spans

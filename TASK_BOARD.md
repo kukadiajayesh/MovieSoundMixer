@@ -995,8 +995,17 @@ Merge fixes (same day):
 
 Verified in the app: the waveforms of a test pair 300 ms apart showed the gap; dragging the new lane gave exactly −300 ms and lined the peaks up; a typed +4.7 s offset drew the peak at 6.99 s (expected 7.00); +12 s on a 30 s window (outside the margin) refetched and drew peaks at 14.29 / 16.79 / 19.28 s (expected 14.3 / 16.8 / 19.3). The picture tracked the audio within ±20 ms, mostly under 10 ms (one frame at 25 fps is 40 ms). Hear switching set gains New 1/0, Original 0/1, Both 0.8/0.8. A video with no audio showed "This video has no audio" with Original and Both disabled. Dark and light themes checked; no new lint errors.
 
+**2026-09-24 (later still):** mkvmerge timing now matches the preview
+- **Problem:** mkvmerge and FFmpeg line up two input files differently, so an mkvmerge merge could put the new track 5–70 ms off from where the sync preview and an FFmpeg merge put it. Measured against a flash frame in the video, each file's tracks land later in mkvmerge than in FFmpeg by:
+  - MP4/MOV/M4A: the edit list's start skip (e.g. AAC priming, 21.3 ms at 48 kHz). mkvmerge ignores it and shifts every track it takes from the file by the largest one. Opus is the exception: mkvmerge carries its skip over.
+  - MP3 with a LAME/Info header: the gapless start plus the Info frame (47 ms at 48 kHz, 51.2 ms at 44.1 kHz). mkvmerge keeps that frame as audio.
+  - Anything else (MKV, MKA, raw AAC…): FFmpeg moves a file that starts before 0 (e.g. an FFmpeg-encoded MKV with audio priming at −21 ms) up to 0; mkvmerge doesn't.
+- **Fix** (`ffmpeg/startShift.ts`, used by `start-merge`): works out that value for the video (its video, plus its audio in Add-as-secondary mode) and for the donor's chosen track, from one short `ffmpeg -debug_ts` pass each. The difference is added to `--sync`, and the job log notes it ("correcting the new track by −42 ms so mkvmerge matches the preview").
+- **Preview fix:** the preview re-encode timed frames on a 1/fps clock, which moved the picture up to half a frame against the audio for sources whose frames sit off that grid (260 ms instead of 279 on the MKV above). Now `-fps_mode passthrough -enc_time_base:v 1:90000`.
+
+Verified: 63 combinations (4 target types × 9 donor formats × both merge modes), mkvmerge with the correction vs an FFmpeg merge, all within 1.0 ms (7 Opus cases were 6 ms off until Opus was excluded). Merges through the app: 4 cases within 0.6 ms of FFmpeg. Preview clips match the merge for all 3 target types. Not covered: MP3 files with an Info/Xing frame but no LAME tag (FFmpeg reports start 0, so no correction is applied; mkvmerge would still be one frame, ~24 ms, late).
+
 Still open:
-- **mkvmerge places M4A/MP4 donor audio ~42 ms later than FFmpeg does**, apparently ignoring the donor's encoder-delay trim. At 0 ms offset a tone at 2.300 s in the donor lands at 2.342 s; FFmpeg outputs (MKV and MP4) match the preview. So on the mkvmerge path, what the preview plays can be ~40 ms off from the file. Predates the sync work. Fix options: read the donor's edit-list delay and fold it into `--sync`, or prefer FFmpeg for MP4-family donors.
 - **Tooling:** renderer `tsc` fails on the unused `version` in `App.tsx`; ESLint 9 ignores `.eslintrc.json` unless run with `ESLINT_USE_FLAT_CONFIG=false`.
 
 ---
