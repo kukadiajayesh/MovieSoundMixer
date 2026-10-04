@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { MergePair, MergeSource } from '../../stores/mergeStore'
-import { channelLabel, containerLabel, fileExt, fmtDuration } from '../../lib/mediaLabels'
+import { channelLabel, containerLabel, fileExt, fmtDuration, fmtSize } from '../../lib/mediaLabels'
 import { getVideoThumbnail } from '../../lib/thumbnailCache'
 import { Icon } from './Icon'
 import { StatusCell, RowStatus } from './StatusCell'
@@ -50,6 +50,7 @@ export const MergeRow: React.FC<MergeRowProps> = ({
 }) => {
   const videoDuration = fmtDuration(p.video.duration)
   const audioDuration = fmtDuration(p.audio?.duration)
+  const videoSize = fmtSize(p.video.size)
 
   const [thumb, setThumb] = useState<string | null>(null)
   useEffect(() => {
@@ -93,6 +94,11 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               {videoDuration && (
                 <span>
                   <Icon name="history" /> {videoDuration}
+                </span>
+              )}
+              {videoSize && (
+                <span>
+                  <Icon name="extract" /> {videoSize}
                 </span>
               )}
               <span>

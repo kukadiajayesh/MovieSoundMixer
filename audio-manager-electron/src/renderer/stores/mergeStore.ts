@@ -21,6 +21,7 @@ export interface MergeSource {
   selectedStreamIndex?: number
   // Present once the source has been probed (see probeSource in MergeAudio.tsx).
   duration?: number // seconds
+  size?: number // bytes
   videoCodec?: string // friendly label, e.g. "H.264" — absent for audio-only files
   resolution?: string // friendly label, e.g. "1080p" — absent for audio-only files
 }

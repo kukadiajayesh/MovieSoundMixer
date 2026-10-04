@@ -45,6 +45,19 @@ export const channelLabel = (channels?: number): string | null => {
   return CHANNEL_LABELS[channels] || `${channels}ch`
 }
 
+// Formats a byte count as "1.84 GB" / "512 MB" / "340 KB".
+export const fmtSize = (bytes?: number): string | null => {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes <= 0) return null
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let v = bytes
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(2)} ${units[i]}`
+}
+
 // Formats seconds as "1h 48m 32s", dropping leading zero units
 // ("48m 32s" under an hour, "32s" under a minute).
 export const fmtDuration = (seconds?: number): string | null => {

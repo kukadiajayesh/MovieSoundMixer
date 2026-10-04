@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useMergeStore, MergePair, MergeSource, isVideoFile } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
@@ -31,7 +31,14 @@ const THEME_META: Record<ThemeType, { label: string; icon: IconName }> = {
   dark: { label: 'Dark', icon: 'moon' },
 }
 
-const dirName = (fp: string) => {
+type PanelId = 'gpu' | 'backend' | 'output'
+const PANELS: Array<{ id: PanelId; label: string; icon: IconName }> = [
+  { id: 'gpu', label: 'GPU Acceleration', icon: 'zap' },
+  { id: 'backend', label: 'Merge Backend', icon: 'layers' },
+  { id: 'output', label: 'Output', icon: 'settings' },
+]
+
+const dirName =(fp: string) => {
   const sep = fp.includes('\\') ? '\\' : '/'
   const idx = fp.lastIndexOf(sep)
   return idx >= 0 ? { dir: fp.slice(0, idx), sep } : null
@@ -71,6 +78,52 @@ export const MergeAudio: React.FC = () => {
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
+
+  // Settings panels start collapsed; only one can be open at a time.
+  const [openPanel, setOpenPanel] = useState<PanelId | null>(null)
+  const open: Record<PanelId, boolean> = {
+    gpu: openPanel === 'gpu',
+    backend: openPanel === 'backend',
+    output: openPanel === 'output',
+  }
+  // Close the floating panel on any click outside the dock, or Escape.
+  const dockRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!openPanel) return
+    const onDown = (e: MouseEvent) => {
+      if (!dockRef.current?.contains(e.target as Node)) setOpenPanel(null)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenPanel(null)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [openPanel])
+
+  // Short note shown under a chip when its settings differ from the defaults.
+  const panelSummary: Record<PanelId, string | null> = {
+    gpu: gpuEnabled
+      ? ['On', encoder, quality !== 'balanced' ? quality[0].toUpperCase() + quality.slice(1) : '']
+          .filter(Boolean)
+          .join(' · ')
+      : null,
+    backend: backend !== 'auto' ? (backend === 'mkvmerge' ? 'mkvmerge' : 'FFmpeg') : null,
+    output:
+      [container !== 'mkv' ? container.toUpperCase() : '', mergeMode === 'replace' ? 'Replace audio' : '']
+        .filter(Boolean)
+        .join(' · ') || null,
+  }
+
+  // Left offset (px) so the expanded card lines up under the chip that opened it.
+  const [panelOffset, setPanelOffset] = useState(0)
+  const togglePanel = (id: PanelId, chip: HTMLElement) => {
+    const dockW = chip.parentElement?.clientWidth ?? 0
+    // 24px dock padding on each side; 340px = max card width (see .settings-dock .cards).
+    setPanelOffset(Math.max(0, Math.min(chip.offsetLeft - 24, dockW - 48 - 340)))
+    setOpenPanel((cur) => (cur === id ? null : id))
+  }
 
   const { theme, setTheme } = useThemeStore()
   const cycleTheme = () => setTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length])
@@ -128,6 +181,9 @@ export const MergeAudio: React.FC = () => {
     try {
       const res = await window.electron.ipcRenderer.invoke('probe-streams', entry.path)
       if (!res?.success) return {}
+      const props = await window.electron.ipcRenderer
+        .invoke('get-file-properties', entry.path)
+        .catch(() => null)
       let streams: MergeSource['streams'] = res.streams
       if (!streams || streams.length === 0) {
         // No detectable audio — still surface it so the reason is visible in the UI
@@ -138,6 +194,7 @@ export const MergeAudio: React.FC = () => {
         streams,
         selectedStreamIndex: preferred.index,
         duration: res.duration,
+        size: props?.exists ? props.size : undefined,
         videoCodec: res.videoCodec,
         resolution: res.resolution,
       }
@@ -477,11 +534,43 @@ export const MergeAudio: React.FC = () => {
         </div>
       )}
 
+
+      {channelPicker && (
+        <StreamPicker
+          streams={channelPicker.audio.streams ?? []}
+          pickedIndex={channelPicker.audio.selectedStreamIndex ?? 0}
+          anchor={channelPicker.anchor}
+          onPick={(index) => updateAudioStreamIndex(channelPicker.pairId, index)}
+          onClose={() => setChannelPicker(null)}
+        />
+      )}
+      </div>
+
       {/* Merge settings cards — hidden until at least one file is picked, and
           tucked away again while a merge is running so the running rows have
           the space; they reappear once the run stops or completes. */}
       {pairs.length > 0 && !running && (
-      <div className="cards">
+      <div className="settings-dock" ref={dockRef}>
+      <div className="panel-toggles">
+        {PANELS.map((pn) => (
+          <button
+            key={pn.id}
+            className={`panel-toggle ${open[pn.id] ? 'on' : ''}`}
+            aria-expanded={open[pn.id]}
+            onClick={(e) => togglePanel(pn.id, e.currentTarget)}
+          >
+            <Icon name={pn.icon} className="ico" />
+            <span className="pt-text">
+              <span>{pn.label}</span>
+              {panelSummary[pn.id] && <span className="pt-sub">{panelSummary[pn.id]}</span>}
+            </span>
+            <Icon name="chevron" className="caret" />
+          </button>
+        ))}
+      </div>
+      {(open.gpu || open.backend || open.output) && (
+      <div className="cards" style={{ ['--panel-offset' as string]: `${panelOffset}px` }}>
+        {open.gpu && (
         <div className="card">
           <div className="card-head">
             <Icon name="zap" className={`ico ${gpuEnabled ? 'ico-glow ico-glow-accent' : ''}`} />
@@ -524,7 +613,9 @@ export const MergeAudio: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
+        {open.backend && (
         <div className="card">
           <div className="card-head">
             <Icon name="layers" className="ico ico-glow ico-glow-warn" />
@@ -561,7 +652,9 @@ export const MergeAudio: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
 
+        {open.output && (
         <div className="card">
          <div className="card-head">
            <Icon name="settings" className="ico ico-glow ico-glow-ok" />
@@ -594,19 +687,11 @@ export const MergeAudio: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
       </div>
       )}
-
-      {channelPicker && (
-        <StreamPicker
-          streams={channelPicker.audio.streams ?? []}
-          pickedIndex={channelPicker.audio.selectedStreamIndex ?? 0}
-          anchor={channelPicker.anchor}
-          onPick={(index) => updateAudioStreamIndex(channelPicker.pairId, index)}
-          onClose={() => setChannelPicker(null)}
-        />
-      )}
       </div>
+      )}
 
       <RunFooter
         outputDir={outputDir}

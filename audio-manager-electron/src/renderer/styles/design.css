@@ -894,6 +894,34 @@ body {
   font-weight: 600;
 }
 
+/* ─── Collapsible settings toggles ───────────────────────────────────── */
+.panel-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 24px 0;
+}
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--fg-2, var(--fg));
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+.panel-toggle:hover { background: var(--bg-3); }
+.panel-toggle.on { border-color: var(--accent); color: var(--text-heading); }
+.panel-toggle .ico { width: 14px; height: 14px; color: var(--fg-3); }
+.panel-toggle.on .ico { color: var(--accent); }
+.panel-toggle .caret { width: 12px; height: 12px; transition: transform 0.15s; }
+.panel-toggle.on .caret { transform: rotate(90deg); }
+
 /* ─── Cards (settings) ───────────────────────────────────────────────── */
 .cards {
   display: grid;
@@ -1251,3 +1279,32 @@ body {
   font-weight: 600;
   text-transform: lowercase;
 }
+
+/* Settings dock: pinned between the scrolling list and the output footer.
+   Column-reverse keeps the chips adjacent to the footer, cards expanding above. */
+.settings-dock {
+  display: flex;
+  flex-direction: column-reverse;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.settings-dock .panel-toggles { padding: 10px 24px; }
+.settings-dock .cards { max-height: 40vh; overflow-y: auto; padding-bottom: 0; }
+.settings-dock .panel-toggles { position: relative; }
+/* Floating popover: sits above the chip row without resizing the dock. */
+.settings-dock { position: relative; }
+.settings-dock .cards {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: calc(24px + var(--panel-offset, 0px));
+  display: block;
+  width: 340px;
+  max-width: calc(100% - 48px);
+  padding: 0;
+  z-index: 50;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius);
+}
+.panel-toggle .pt-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.panel-toggle .pt-sub { font-size: 11px; font-weight: 400; color: var(--accent); }
