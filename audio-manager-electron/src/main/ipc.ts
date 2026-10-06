@@ -8,7 +8,9 @@ import { getPeaks } from './ffmpeg/waveform'
 import { mkvmergeStartShift } from './ffmpeg/startShift'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
-import { detectGPUEncoders, pickPreferredEncoder, getGPUEncoderArgs } from './gpu/gpuDetector'
+import { detectGPUEncoders } from './gpu/gpuDetector'
+import { buildVideoEncodeArgs } from './ffmpeg/videoEncode'
+import { renderEncodePreview, grabCompareFrames, cancelEncodePreview, getEncodePreviewPath } from './ffmpeg/encodePreview'
 import { enqueueJob, cancelJob, pauseQueue, resumeQueue, setConcurrency, Job } from './queue/jobQueue'
 import { validateInputFile, validateOutputPath, resolveOutputPath, getFileProperties } from './files/fileManager'
 import { validateSetting } from './settings/settingsManager'
@@ -17,18 +19,6 @@ import * as db from './db/repository'
 // Largest A/V sync shift accepted for a merge, either direction. Keep in step
 // with MAX_OFFSET_MS in the renderer's SyncControls.
 const MAX_AUDIO_OFFSET_MS = 600_000
-
-// Video codecs (as labelled by probeStreams) that WebM can hold as-is.
-const WEBM_VIDEO_CODECS = ['VP8', 'VP9', 'AV1']
-
-// libvpx-vp9 settings per quality preset, for WebM output that has to be
-// re-encoded. Constant quality (-b:v 0 + -crf); lower cpu-used is slower
-// and better.
-const VP9_ARGS: Record<'fast' | 'balanced' | 'quality', string[]> = {
-  fast: ['-deadline', 'realtime', '-cpu-used', '8', '-crf', '36'],
-  balanced: ['-deadline', 'good', '-cpu-used', '4', '-crf', '32'],
-  quality: ['-deadline', 'good', '-cpu-used', '2', '-crf', '28'],
-}
 
 export function setupIPCHandlers(mainWindow: BrowserWindow) {
   // 1. File Dialog selection. `kind` restricts what the picker offers:
@@ -180,6 +170,88 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('cancel-sync-preview', (_event, key: string) => {
     cancelSyncPreview(String(key))
+  })
+
+  // 3c2. Test encode: a few seconds encoded with exactly the merge's video
+  // settings (encoder, quality, full resolution), returned as bytes with how
+  // long it took, so the renderer can show it and project the full file.
+  ipcMain.handle(
+    'render-encode-preview',
+    async (
+      _event,
+      payload: {
+        key: string
+        videoPath: string
+        audioPath: string
+        audioStreamIndex?: number
+        offsetMs?: number
+        startSec?: number
+        durationSec: number
+        outContainer: string
+        copyVideo: boolean
+        quality?: 'fast' | 'balanced' | 'quality'
+        encoder?: string
+      },
+    ) => {
+      const offsetMs = Math.round(payload.offsetMs ?? 0)
+      const startSec = Math.max(0, payload.startSec ?? 0)
+      if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > MAX_AUDIO_OFFSET_MS) {
+        return { success: false, error: `Audio offset must be within ±${MAX_AUDIO_OFFSET_MS / 1000} s` }
+      }
+      if (!Number.isFinite(startSec) || ![5, 10, 20].includes(payload.durationSec)) {
+        return { success: false, error: 'Invalid preview range' }
+      }
+      if (!['mkv', 'mp4', 'webm'].includes(payload.outContainer)) {
+        return { success: false, error: 'Unknown output container' }
+      }
+      for (const p of [payload.videoPath, payload.audioPath]) {
+        const check = validateInputFile(p)
+        if (!check.valid) return { success: false, error: check.error }
+      }
+      try {
+        const videoInfo = await probeStreams(payload.videoPath).catch(() => null)
+        const res = await renderEncodePreview({
+          key: String(payload.key),
+          videoPath: payload.videoPath,
+          audioPath: payload.audioPath,
+          audioStreamIndex: Math.max(0, payload.audioStreamIndex ?? 0),
+          offsetMs,
+          startSec,
+          durationSec: payload.durationSec,
+          videoInfo,
+          outContainer: payload.outContainer,
+          copyVideo: !!payload.copyVideo,
+          quality: payload.quality,
+          encoder: payload.encoder,
+        })
+        return { success: true, ...res }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  // Full-resolution PNG frames, original vs. the test encode, at one moment.
+  ipcMain.handle('grab-compare-frames', async (_event, payload: { key: string; atSec: number }) => {
+    try {
+      const frames = await grabCompareFrames(String(payload.key), Number(payload.atSec))
+      return { success: true, ...frames }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('cancel-encode-preview', (_event, key: string) => {
+    cancelEncodePreview(String(key))
+  })
+
+  // Fallback for codecs the app's player can't decode: open the clip in the
+  // system's default player.
+  ipcMain.handle('open-encode-preview', async (_event, key: string) => {
+    const clipPath = getEncodePreviewPath(String(key))
+    if (!clipPath) return { success: false, error: 'Render a test encode first' }
+    const error = await shell.openPath(clipPath)
+    return error ? { success: false, error } : { success: true }
   })
 
   // 3d. Waveform peaks (one per 5 ms, mono) for a window of one audio stream,
@@ -476,28 +548,15 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           args.push(`-filter:a:${addedTrack}`, filter)
         }
 
-        const webmCopyOk = !!videoInfo?.videoCodec && WEBM_VIDEO_CODECS.includes(videoInfo.videoCodec)
-        if (copyVideo && (!webm || webmCopyOk)) {
-          args.push('-c:v', 'copy')
-        } else if (webm) {
-          // Hardware encoders here are H.264/HEVC only, which WebM can't hold.
-          args.push('-c:v', 'libvpx-vp9', '-b:v', '0', '-row-mt', '1', ...VP9_ARGS[payload.quality ?? 'balanced'])
-          if (copyVideo) {
-            note = `WebM can't hold ${videoInfo?.videoCodec ?? 'this'} video, so it's being re-encoded to VP9 (slower than a copy)`
-          }
-        } else {
-          // Re-encoding: use a hardware encoder when GPU acceleration is enabled
-          // and one is available, otherwise fall back to CPU libx264.
-          const settings = await db.getSettings()
-          const gpuEnabled = settings.gpu_enabled === 'true'
-          const detected = detectGPUEncoders()
-          // Honor the user's dropdown choice only if it's actually one of the
-          // encoders we detected — otherwise fall back to auto-picking the best.
-          const requestedEncoder =
-            payload.encoder && detected.available.includes(payload.encoder) ? payload.encoder : null
-          const encoder = gpuEnabled ? requestedEncoder ?? pickPreferredEncoder(detected) : null
-          args.push(...getGPUEncoderArgs(encoder ?? 'libx264', payload.quality ?? 'balanced'))
-        }
+        const video = await buildVideoEncodeArgs({
+          videoInfo,
+          outContainer,
+          copyVideo,
+          quality: payload.quality,
+          encoder: payload.encoder,
+        })
+        args.push(...video.args)
+        note = video.note
 
         if (webm) {
           args.push('-c:a', 'libopus', '-b:a', '192k', outPath)

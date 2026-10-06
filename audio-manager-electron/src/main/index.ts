@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { setMainWindow, resumeInterruptedJobs } from './queue/jobQueue'
 import { setupIPCHandlers } from './ipc'
+import { clearEncodePreviews } from './ffmpeg/encodePreview'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -60,6 +61,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Test-encode clips are kept on disk while their panel is open; drop them.
+app.on('will-quit', () => {
+  clearEncodePreviews()
 })
 
 app.on('activate', () => {

@@ -30,7 +30,7 @@ type Preview =
 type AddedWave = { lane: WaveLane; track: number; audioPath: string }
 
 // IPC hands Buffers over as Uint8Array views; copy out just their bytes.
-const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+export const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 
 const fetchPeaks = async (path: string, stream: number, start: number, duration: number): Promise<WaveLane> => {

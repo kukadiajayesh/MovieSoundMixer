@@ -24,20 +24,40 @@ export interface SyncPreview {
   original: Buffer | null // M4A: the video's original audio, same window
 }
 
-// Every process still running for a key (the clip and the original audio).
+// Every preview process still running for a key (e.g. the clip and the
+// original audio), so a newer request or a closed panel can stop them all.
 const running = new Map<string, Set<ChildProcess>>()
 
-export function cancelSyncPreview(key: string) {
+export function cancelTracked(key: string) {
   for (const child of running.get(key) ?? []) child.kill('SIGKILL')
   running.delete(key)
 }
 
-const runTracked = (key: string, args: string[]): Promise<void> =>
+export function cancelSyncPreview(key: string) {
+  cancelTracked(key)
+}
+
+// The most useful line of a failed FFmpeg run. FFmpeg ends with generic lines
+// ("Conversion failed!"); the cause is usually an earlier one tagged with the
+// component that failed, e.g. "[h264_nvenc @ 0x..] Cannot load nvcuda.dll".
+function errorLine(stderr: string): string | undefined {
+  const lines = stderr.trim().split(/\r?\n/)
+  for (const line of lines) {
+    const m = line.match(/^\[(\w+) @ [^\]]+\] (.+)$/)
+    if (m) return `${m[1]}: ${m[2].trim()}`
+  }
+  return lines.pop()
+}
+
+// Runs FFmpeg under `key`. When `stdout` is given, the process's stdout is
+// collected into it (for piped output such as a PNG frame).
+export const runTracked = (key: string, args: string[], stdout?: Buffer[]): Promise<void> =>
   new Promise((resolve, reject) => {
     const child = spawn(getFFmpegPath(), args)
     const set = running.get(key) ?? new Set<ChildProcess>()
     set.add(child)
     running.set(key, set)
+    if (stdout) child.stdout.on('data', (d: Buffer) => stdout.push(d))
     let stderr = ''
     child.stderr.on('data', (d) => {
       stderr = (stderr + d.toString()).slice(-2000)
@@ -47,7 +67,7 @@ const runTracked = (key: string, args: string[]): Promise<void> =>
       set.delete(child)
       if (set.size === 0 && running.get(key) === set) running.delete(key)
       if (signal) reject(new Error('Preview cancelled'))
-      else if (code !== 0) reject(new Error(stderr.trim().split('\n').pop() || `FFmpeg exited with code ${code}`))
+      else if (code !== 0) reject(new Error(errorLine(stderr) || `FFmpeg exited with code ${code}`))
       else resolve()
     })
   })

@@ -14,6 +14,10 @@ interface MergeRowProps {
   onOpenChannelPicker: (audio: MergeSource, anchor: HTMLElement) => void
   syncOpen: boolean
   onOpenSync: () => void
+  // Shown only when the merge re-encodes the video.
+  showEncodeTest: boolean
+  encodeTestOpen: boolean
+  onOpenEncodeTest: () => void
   onClearAudio: () => void
   onOpenVideo: (path: string) => void
   onRetry: () => void
@@ -48,6 +52,9 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   onOpenChannelPicker,
   syncOpen,
   onOpenSync,
+  showEncodeTest,
+  encodeTestOpen,
+  onOpenEncodeTest,
   onClearAudio,
   onOpenVideo,
   onRetry,
@@ -231,6 +238,23 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               <span className="lbl">Sync</span>
               <span className="val">{offsetMs === 0 ? '0 ms' : fmtOffsetShort(offsetMs)}</span>
             </button>
+            {showEncodeTest && (
+              <button
+                type="button"
+                className={`sync-pick ${encodeTestOpen ? 'open' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenEncodeTest()
+                }}
+                disabled={disabled}
+                aria-label="Test encode a few seconds with the current settings"
+                aria-expanded={encodeTestOpen}
+                data-tip={disabled ? undefined : 'Test encode a few seconds with the current settings'}
+              >
+                <Icon name="zap" className="ico" />
+                <span className="lbl">Test</span>
+              </button>
+            )}
           </div>
           <input
             type="text"

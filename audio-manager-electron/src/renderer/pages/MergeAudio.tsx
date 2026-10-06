@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore, ThemeType } from '../stores/themeStore'
 import { fmtOffset } from '../lib/mediaLabels'
 import { SyncPanel } from '../components/design/SyncPanel'
+import { EncodePanel } from '../components/design/EncodePanel'
 import { Icon, IconName } from '../components/design/Icon'
 import { Dropzone } from '../components/design/Dropzone'
 import { MergeRow } from '../components/design/MergeRow'
@@ -18,6 +19,10 @@ import appLogo from '../../../assets/icon.png'
 
 type Backend = 'auto' | 'mkvmerge' | 'ffmpeg'
 type Quality = 'fast' | 'balanced' | 'quality'
+
+// Video codecs WebM can hold without re-encoding. Keep in step with
+// WEBM_VIDEO_CODECS in src/main/ffmpeg/videoEncode.ts.
+const WEBM_VIDEO_CODECS = ['VP8', 'VP9', 'AV1']
 
 // Video + external-audio extensions the folder importer should pull in.
 const MEDIA_EXTS = [
@@ -79,6 +84,7 @@ export const MergeAudio: React.FC = () => {
   const [backendAvailable, setBackendAvailable] = useState({ ffmpeg: false, mkvmerge: false })
   const [assigning, setAssigning] = useState<string | null>(null)
   const [syncPairId, setSyncPairId] = useState<string | null>(null)
+  const [encodePairId, setEncodePairId] = useState<string | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
@@ -147,6 +153,17 @@ export const MergeAudio: React.FC = () => {
   const syncPair = syncPairId ? pairs.find((p) => p.id === syncPairId) : undefined
   // Stable, so the panel's listeners aren't re-attached on every render.
   const closeSync = useCallback(() => setSyncPairId(null), [])
+  const encodePair = encodePairId ? pairs.find((p) => p.id === encodePairId) : undefined
+  const closeEncode = useCallback(() => setEncodePairId(null), [])
+
+  // Whether merging this pair re-encodes its video — the same decision
+  // start-merge makes, so the Test button only shows when there's an encode
+  // to test. mkvmerge never re-encodes; WebM re-encodes anything it can't hold.
+  const usesMkvmerge = backend === 'mkvmerge' || (backend === 'auto' && container === 'mkv' && backendAvailable.mkvmerge)
+  const reencodes = (p: MergePair) =>
+    !!p.audio &&
+    !usesMkvmerge &&
+    (container === 'webm' ? !(copyVideo && WEBM_VIDEO_CODECS.includes(p.video.videoCodec ?? '')) : !copyVideo)
 
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
@@ -541,10 +558,19 @@ export const MergeAudio: React.FC = () => {
                 syncOpen={syncPairId === p.id}
                 onOpenSync={() => {
                   setChannelPicker(null)
+                  setEncodePairId(null)
                   setSyncPairId(p.id)
+                }}
+                showEncodeTest={reencodes(p)}
+                encodeTestOpen={encodePairId === p.id}
+                onOpenEncodeTest={() => {
+                  setChannelPicker(null)
+                  setSyncPairId(null)
+                  setEncodePairId(p.id)
                 }}
                 onOpenChannelPicker={(audio, anchor) => {
                   setSyncPairId(null)
+                  setEncodePairId(null)
                   setChannelPicker((prev) =>
                     prev && prev.pairId === p.id ? null : { pairId: p.id, audio, anchor }
                   )
@@ -567,6 +593,17 @@ export const MergeAudio: React.FC = () => {
           onChange={(ms) => setPairOffset(syncPair.id, ms)}
           onPickTrack={(index) => updateAudioStreamIndex(syncPair.id, index)}
           onClose={closeSync}
+        />
+      )}
+
+      {encodePair && reencodes(encodePair) && !running && (
+        <EncodePanel
+          pair={encodePair}
+          outContainer={container}
+          copyVideo={copyVideo}
+          quality={quality}
+          encoder={encoder}
+          onClose={closeEncode}
         />
       )}
 
