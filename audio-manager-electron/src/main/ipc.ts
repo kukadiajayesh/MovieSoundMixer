@@ -246,7 +246,8 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       payload: {
         id: string
         videoPath: string
-        audioPath: string
+        // Omitted for a title-only edit of the video's own tracks.
+        audioPath?: string
         // Ordinal position (0-based) among audioPath's own audio streams —
         // the "N" in FFmpeg's "1:a:N" — letting the audio source be a video
         // (or any multi-track file) with a specific channel picked. Defaults
@@ -267,6 +268,11 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         // positive delays it, negative plays it earlier. The video and any
         // original audio tracks are never shifted. Omitted means no shift.
         audioOffsetMs?: number
+        // Title override for the added track; omitted keeps the donor's, blank clears it.
+        audioTitle?: string
+        // Title overrides for the video's own audio tracks, keyed by 0-based
+        // ordinal among the video's audio streams.
+        videoTrackTitles?: Record<string, string>
       },
     ) => {
       const { id, videoPath, audioPath, outContainer, outFolder, copyVideo, mergeMode, duration, overwrite } = payload
@@ -278,7 +284,21 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         return { success: false, error: `Audio offset must be within ±${MAX_AUDIO_OFFSET_MS / 1000} s` }
       }
 
-      for (const p of [videoPath, audioPath]) {
+      const cleanTitle = (t: unknown): string | null => {
+        if (typeof t !== 'string') return null
+        // eslint-disable-next-line no-control-regex
+        const v = t.replace(/[ -]/g, '').trim().slice(0, 200)
+        return v
+      }
+      const audioTitle = cleanTitle(payload.audioTitle)
+      const videoTitles: [number, string][] = []
+      for (const [k, v] of Object.entries(payload.videoTrackTitles ?? {})) {
+        const ord = Number(k)
+        const title = cleanTitle(v)
+        if (Number.isInteger(ord) && ord >= 0 && title !== null) videoTitles.push([ord, title])
+      }
+
+      for (const p of audioPath ? [videoPath, audioPath] : [videoPath]) {
         const check = validateInputFile(p)
         if (!check.valid) {
           return { success: false, error: check.error }
@@ -287,7 +307,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
 
       const videoName = path.basename(videoPath)
       const baseName = videoName.substring(0, videoName.lastIndexOf('.'))
-      let outPath = path.join(outFolder, `${baseName}_merged.${outContainer}`)
+      // A title-only edit is a plain remux, so keep the video's own container.
+      const outExt = audioPath ? outContainer : path.extname(videoPath).slice(1).toLowerCase() || outContainer
+      let outPath = path.join(outFolder, `${baseName}_merged.${outExt}`)
 
       const outCheck = validateOutputPath(outPath)
       if (!outCheck.valid) {
@@ -299,6 +321,43 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       if (backend === 'mkvmerge' && mkvPath === null) {
         return { success: false, error: 'mkvmerge backend requested but mkvmerge is not installed' }
       }
+      if (!audioPath) {
+        if (videoTitles.length === 0) {
+          return { success: false, error: 'Nothing to merge: no audio file and no title changes' }
+        }
+        if (backend === 'mkvmerge' && outExt !== 'mkv') {
+          return { success: false, error: 'mkvmerge can only write MKV. Use Auto or Force FFmpeg.' }
+        }
+        const vAudio =
+          outExt === 'mkv' && mkvPath !== null && backend !== 'ffmpeg'
+            ? (identifyMkv(videoPath) ?? []).filter((t) => t.type === 'audio')
+            : []
+        let titleArgs: string[]
+        let titleBinary: Job['binary'] = 'ffmpeg'
+        if (vAudio.length > 0) {
+          const opts: string[] = []
+          for (const [ord, title] of videoTitles) {
+            if (vAudio[ord]) opts.push('--track-name', `${vAudio[ord].id}:${title}`)
+          }
+          titleArgs = ['-o', outPath, ...opts, videoPath]
+          titleBinary = 'mkvmerge'
+        } else {
+          titleArgs = ['-y', '-i', videoPath, '-map', '0', '-c', 'copy']
+          for (const [ord, title] of videoTitles) titleArgs.push(`-metadata:s:a:${ord}`, `title=${title}`)
+          titleArgs.push(outPath)
+        }
+        enqueueJob({
+          id,
+          type: 'merge',
+          inputPath: videoPath,
+          outputPath: outPath,
+          args: titleArgs,
+          duration,
+          binary: titleBinary,
+        })
+        return { success: true, outPath, note: undefined, detail: 'title-only edit (no audio added, streams copied)' }
+      }
+
       // mkvmerge only writes Matroska: given an .mp4 name it still writes MKV
       // data, and it can't transcode for WebM.
       if (backend === 'mkvmerge' && outContainer !== 'mkv') {
@@ -349,6 +408,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
             // A negative shift makes mkvmerge drop whatever lands before 0.
             audioSourceOpts.push('--sync', `${track.id}:${syncMs}`)
           }
+          if (audioTitle !== null) audioSourceOpts.push('--track-name', `${track.id}:${audioTitle}`)
         } else {
           // Couldn't identify audioPath's tracks — don't risk an unscoped
           // mkvmerge command pulling in a donor video's other tracks.
@@ -358,12 +418,21 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
 
       // If exporting to MKV and mkvmerge is installed, use it!
       if (useMkvMerge) {
+        // Existing-track renames (only meaningful when the tracks are kept).
+        // mkvmerge addresses tracks by its own IDs, so map ordinal -> ID.
+        const videoNameOpts: string[] = []
+        if (mergeMode !== 'replace' && videoTitles.length > 0) {
+          const vAudio = (identifyMkv(videoPath) ?? []).filter((t) => t.type === 'audio')
+          for (const [ord, title] of videoTitles) {
+            if (vAudio[ord]) videoNameOpts.push('--track-name', `${vAudio[ord].id}:${title}`)
+          }
+        }
         if (mergeMode === 'replace') {
           // Replace: omit old audio tracks from source video
           args = ['-o', outPath, '--no-audio', videoPath, ...audioSourceOpts, audioPath]
         } else {
           // Keep secondary: append all tracks
-          args = ['-o', outPath, videoPath, ...audioSourceOpts, audioPath]
+          args = ['-o', outPath, ...videoNameOpts, videoPath, ...audioSourceOpts, audioPath]
         }
       } else {
         // Fallback or default FFmpeg merging engine
@@ -371,7 +440,8 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         // its video can go into WebM untouched. If probing fails, assume one
         // audio track and a codec WebM can't take; both fail safe.
         const videoInfo = await probeStreams(videoPath).catch(() => null)
-        const videoHasAudio = videoInfo ? videoInfo.streams.length > 0 : true
+        const videoAudioCount = videoInfo ? videoInfo.streams.length : 1
+        const videoHasAudio = videoAudioCount > 0
         const webm = outContainer === 'webm'
 
         args = ['-y', '-i', videoPath, '-i', audioPath]
@@ -380,10 +450,18 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           args.push('-map', '0:v:0', '-map', `1:a:${audioStreamIndex}`)
         } else {
           // The trailing ? lets a video with no audio of its own through.
-          args.push('-map', '0:v:0', '-map', '0:a:0?', '-map', `1:a:${audioStreamIndex}`)
+          args.push('-map', '0:v:0', '-map', '0:a?', '-map', `1:a:${audioStreamIndex}`)
         }
-        // Output position of the added track among the output's audio streams.
-        const addedTrack = mergeMode === 'secondary' && videoHasAudio ? 1 : 0
+        // Output position of the added track among the output's audio streams
+        // (all of the video's own audio tracks come first in secondary mode).
+        const addedTrack = mergeMode === 'secondary' && videoHasAudio ? videoAudioCount : 0
+
+        if (audioTitle !== null) args.push(`-metadata:s:a:${addedTrack}`, `title=${audioTitle}`)
+        if (mergeMode === 'secondary') {
+          for (const [ord, title] of videoTitles) {
+            if (ord < videoAudioCount) args.push(`-metadata:s:a:${ord}`, `title=${title}`)
+          }
+        }
 
         if (audioOffsetMs !== 0) {
           // Filter only the added track. Padding with silence (or trimming

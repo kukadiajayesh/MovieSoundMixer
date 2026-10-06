@@ -38,6 +38,11 @@ export interface MergePair {
   // A/V sync shift for the added audio track in ms: positive delays it,
   // negative plays it earlier. Unset means no shift.
   audioOffsetMs?: number
+  // Title override for the added track; unset keeps the donor stream's title.
+  audioTitle?: string
+  // Title overrides for the video's own audio tracks, keyed by ordinal among
+  // the video's audio streams.
+  videoTrackTitles?: Record<number, string>
 }
 
 /** Extract a normalized SxxExx episode tag from a filename, if present. */
@@ -52,6 +57,20 @@ export const parseEpisode = (name: string): string | null => {
 export const audioOrdinal = (audio: MergeSource): number =>
   Math.max(0, (audio.streams ?? []).findIndex((s) => s.index === audio.selectedStreamIndex))
 
+/** The video's audio tracks whose title the user changed, as ordinal -> title. */
+export const changedVideoTitles = (p: MergePair): Record<number, string> => {
+  const out: Record<number, string> = {}
+  const streams = (p.video.streams ?? []).filter((s) => s.codec !== 'unknown')
+  for (const [k, v] of Object.entries(p.videoTrackTitles ?? {})) {
+    const ord = Number(k)
+    if (streams[ord] && v !== (streams[ord].title ?? '')) out[ord] = v
+  }
+  return out
+}
+
+/** Whether the pair can run: a new audio track, or title edits alone. */
+export const isRunnable = (p: MergePair): boolean => !!p.audio || Object.keys(changedVideoTitles(p)).length > 0
+
 const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts']
 
 export const isVideoFile = (name: string) =>
@@ -64,6 +83,8 @@ interface MergeState {
   assignAudio: (pairId: string, audio: MergeSource | null) => void
   updateAudioStreamIndex: (pairId: string, streamIndex: number) => void
   setPairOffset: (pairId: string, ms: number) => void
+  setPairAudioTitle: (pairId: string, title: string) => void
+  setPairVideoTrackTitle: (pairId: string, ordinal: number, title: string) => void
   updateSourceMeta: (pairId: string, side: 'video' | 'audio', meta: Partial<MergeSource>) => void
   removePair: (id: string) => void
   clearPairs: () => void
@@ -115,7 +136,7 @@ export const useMergeStore = create<MergeState>((set) => ({
   // dropped along with the old one.
   assignAudio: (pairId, audio) =>
     set((state) => ({
-      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audio, audioOffsetMs: undefined } : p)),
+      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audio, audioOffsetMs: undefined, audioTitle: undefined } : p)),
     })),
 
   setPairOffset: (pairId, ms) =>
@@ -123,10 +144,24 @@ export const useMergeStore = create<MergeState>((set) => ({
       pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audioOffsetMs: ms } : p)),
     })),
 
+  setPairAudioTitle: (pairId, title) =>
+    set((state) => ({
+      pairs: state.pairs.map((p) => (p.id === pairId ? { ...p, audioTitle: title } : p)),
+    })),
+
+  setPairVideoTrackTitle: (pairId, ordinal, title) =>
+    set((state) => ({
+      pairs: state.pairs.map((p) =>
+        p.id === pairId ? { ...p, videoTrackTitles: { ...p.videoTrackTitles, [ordinal]: title } } : p,
+      ),
+    })),
+
   updateAudioStreamIndex: (pairId, streamIndex) =>
     set((state) => ({
       pairs: state.pairs.map((p) =>
-        p.id === pairId && p.audio ? { ...p, audio: { ...p.audio, selectedStreamIndex: streamIndex } } : p,
+        p.id === pairId && p.audio
+          ? { ...p, audioTitle: undefined, audio: { ...p.audio, selectedStreamIndex: streamIndex } }
+          : p,
       ),
     })),
 

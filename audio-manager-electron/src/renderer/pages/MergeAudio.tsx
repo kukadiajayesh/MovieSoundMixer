@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useMergeStore, MergePair, MergeSource, isVideoFile, audioOrdinal } from '../stores/mergeStore'
+import { useMergeStore, MergePair, MergeSource, isVideoFile, audioOrdinal, isRunnable, changedVideoTitles } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useThemeStore, ThemeType } from '../stores/themeStore'
@@ -143,7 +143,7 @@ export const MergeAudio: React.FC = () => {
       .catch(() => {})
   }, [])
 
-  const matched = pairs.filter((p) => p.audio).length
+  const matched = pairs.filter(isRunnable).length
   const syncPair = syncPairId ? pairs.find((p) => p.id === syncPairId) : undefined
   // Stable, so the panel's listeners aren't re-attached on every render.
   const closeSync = useCallback(() => setSyncPairId(null), [])
@@ -313,8 +313,11 @@ export const MergeAudio: React.FC = () => {
 
       // FFmpeg maps audio by ordinal (a:N) — translate the absolute stream
       // index picked in the channel popover, same convention as Extract Audio.
-      const audioStreamIndex = audioOrdinal(p.audio!)
-      const offsetMs = p.audioOffsetMs ?? 0
+      const audioStreamIndex = p.audio ? audioOrdinal(p.audio) : 0
+      const offsetMs = p.audio ? (p.audioOffsetMs ?? 0) : 0
+      const videoTitles = changedVideoTitles(p)
+      const pickedTitle = p.audio?.streams?.find((s) => s.index === p.audio!.selectedStreamIndex)?.title ?? ''
+      const audioTitle = p.audio && p.audioTitle !== undefined && p.audioTitle !== pickedTitle ? p.audioTitle : undefined
 
       // The actual pipeline is a single pass: the chosen audio track is
       // selected from the source audio file and muxed directly onto the
@@ -326,13 +329,15 @@ export const MergeAudio: React.FC = () => {
       useJobStore
         .getState()
         .addLog(
-          `${p.video.name}: selecting audio track #${audioStreamIndex} from "${p.audio!.name}" and muxing it directly onto "${p.video.name}" (single-pass, no intermediate extract step)${shift}`,
+          !p.audio
+            ? `${p.video.name}: updating audio track titles (no audio added)`
+            : `${p.video.name}: selecting audio track #${audioStreamIndex} from "${p.audio!.name}" and muxing it directly onto "${p.video.name}" (single-pass, no intermediate extract step)${shift}`,
         )
 
       const res = await window.electron.ipcRenderer.invoke('start-merge', {
         id: p.id,
         videoPath: p.video.path,
-        audioPath: p.audio!.path,
+        audioPath: p.audio?.path,
         audioStreamIndex,
         outContainer: container,
         outFolder: outputDir,
@@ -343,6 +348,8 @@ export const MergeAudio: React.FC = () => {
         quality,
         encoder: encoder || undefined,
         audioOffsetMs: offsetMs,
+        audioTitle,
+        videoTrackTitles: videoTitles,
       })
       if (res?.success && res.note) {
         useJobStore.getState().addLog(`${p.video.name}: ${res.note}`, 'warn')
@@ -363,9 +370,9 @@ export const MergeAudio: React.FC = () => {
   }
 
   const handleRun = async () => {
-    const targets = pairs.filter((p) => p.audio && p.status !== 'processing')
+    const targets = pairs.filter((p) => isRunnable(p) && p.status !== 'processing')
     if (targets.length === 0) {
-      toast({ kind: 'error', title: 'No matched pairs to merge', desc: 'Assign audio files first.' })
+      toast({ kind: 'error', title: 'No matched pairs to merge', desc: 'Assign audio files or edit track titles first.' })
       return
     }
     if (!window.electron?.ipcRenderer) {
@@ -394,7 +401,7 @@ export const MergeAudio: React.FC = () => {
   // folding into an active batch if one is still running (see retryJob).
   const handleRetryPair = async (id: string) => {
     const p = pairs.find((pr) => pr.id === id)
-    if (!p || !p.audio) return
+    if (!p || !isRunnable(p)) return
     if (!window.electron?.ipcRenderer) {
       toast({ kind: 'error', title: 'Merging requires the Electron shell' })
       return

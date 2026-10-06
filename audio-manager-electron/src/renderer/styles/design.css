@@ -1481,3 +1481,11 @@ body {
 }
 .panel-toggle .pt-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
 .panel-toggle .pt-sub { font-size: 11px; font-weight: 400; color: var(--accent); }
+
+.track-toggle { margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; }
+.track-toggle.open { background: rgba(127,127,127,.2); }
+.track-titles { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.track-title-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.track-title-row .lbl { flex: none; min-width: 90px; opacity: .7; }
+.track-title-row input, .track-title-input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border, #444); background: transparent; color: inherit; }
+.track-title-input { margin-top: 6px; width: 100%; box-sizing: border-box; }

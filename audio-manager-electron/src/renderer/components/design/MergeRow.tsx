@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { MergePair, MergeSource } from '../../stores/mergeStore'
+import { MergePair, MergeSource, isRunnable, useMergeStore } from '../../stores/mergeStore'
 import { channelLabel, containerLabel, fileExt, fmtDuration, fmtOffset, fmtOffsetShort, fmtSize } from '../../lib/mediaLabels'
 import { getVideoThumbnail } from '../../lib/thumbnailCache'
 import { Icon } from './Icon'
@@ -61,6 +61,12 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   const offsetMs = p.audioOffsetMs ?? 0
   const syncTip = `Audio sync: ${offsetMs === 0 ? 'no shift' : fmtOffset(offsetMs)}. Click to adjust or preview.`
 
+  const setAudioTitle = useMergeStore((s) => s.setPairAudioTitle)
+  const setVideoTrackTitle = useMergeStore((s) => s.setPairVideoTrackTitle)
+  const [tracksOpen, setTracksOpen] = useState(false)
+  const videoAudio = (p.video.streams ?? []).filter((s) => s.codec !== 'unknown')
+  const pickedAudio = p.audio?.streams?.find((s) => s.index === p.audio!.selectedStreamIndex) ?? p.audio?.streams?.[0]
+
   const [thumb, setThumb] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -120,7 +126,37 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               {p.video.resolution && <span className="mc-tag pill">{p.video.resolution}</span>}
               {p.video.videoCodec && <span className="mc-tag pill">{p.video.videoCodec}</span>}
               <StreamBadges source={p.video} pill />
+              {videoAudio.length > 0 && (
+                <button
+                  type="button"
+                  className={`track-toggle ${tracksOpen ? 'open' : ''}`}
+                  onClick={() => setTracksOpen((o) => !o)}
+                  disabled={disabled}
+                  data-tip="Rename this video's audio tracks"
+                >
+                  Titles
+                </button>
+              )}
             </div>
+            {tracksOpen && videoAudio.length > 0 && (
+              <div className="track-titles">
+                {videoAudio.map((s, i) => (
+                  <label key={s.index} className="track-title-row">
+                    <span className="lbl">
+                      #{i + 1} {s.language ? s.language.toUpperCase() : ''} {s.codec.toUpperCase()}
+                    </span>
+                    <input
+                      type="text"
+                      maxLength={200}
+                      value={p.videoTrackTitles?.[i] ?? s.title ?? ''}
+                      placeholder={s.title || 'Track title'}
+                      disabled={disabled}
+                      onChange={(e) => setVideoTrackTitle(p.id, i, e.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -196,6 +232,17 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               <span className="val">{offsetMs === 0 ? '0 ms' : fmtOffsetShort(offsetMs)}</span>
             </button>
           </div>
+          <input
+            type="text"
+            className="track-title-input"
+            maxLength={200}
+            value={p.audioTitle ?? pickedAudio?.title ?? ''}
+            placeholder={pickedAudio?.title || 'Track title'}
+            disabled={disabled}
+            aria-label="Title of the added audio track"
+            data-tip={disabled ? undefined : 'Title of the added audio track (blank keeps the original)'}
+            onChange={(e) => setAudioTitle(p.id, e.target.value)}
+          />
         </div>
       ) : (
         <div
@@ -250,7 +297,7 @@ export const MergeRow: React.FC<MergeRowProps> = ({
             </button>
           )}
         </div>
-        <StatusCell status={status} progress={p.progress} error={p.error} hasAudio={!!p.audio} />
+        <StatusCell status={status} progress={p.progress} error={p.error} hasAudio={isRunnable(p)} />
       </div>
     </div>
   )
