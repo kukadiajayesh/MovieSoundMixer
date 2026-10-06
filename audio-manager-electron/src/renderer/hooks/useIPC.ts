@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { LogTag, useJobStore } from '../stores/jobStore'
 import { useMergeStore } from '../stores/mergeStore'
+import { useReencodeStore } from '../stores/reencodeStore'
 
 const classifyLogLine = (message: string): LogTag => {
   const lower = message.toLowerCase()
@@ -22,6 +23,7 @@ export const useIPC = () => {
     const progressListener = (_event: any, data: { jobId: string; percent: number }) => {
       useJobStore.getState().updateJobProgress(data.jobId, data.percent)
       useMergeStore.getState().updatePairProgress(data.jobId, Math.min(1, data.percent / 100))
+      useReencodeStore.getState().updateProgress(data.jobId, Math.min(1, data.percent / 100))
     }
 
     const speedListener = (_event: any, data: { jobId: string; mbps: number }) => {
@@ -42,18 +44,24 @@ export const useIPC = () => {
       },
     ) => {
       const pairs = useMergeStore.getState()
+      const videos = useReencodeStore.getState()
       const jobs = useJobStore.getState()
 
+      // Job ids are unique across pages, so each store only ever matches its own rows.
       if (data.status === 'success') {
         pairs.updatePairStatus(data.jobId, 'success', undefined, data.outputPath)
         pairs.updatePairProgress(data.jobId, 1)
+        videos.updateStatus(data.jobId, 'success', undefined, data.outputPath)
+        videos.updateProgress(data.jobId, 1)
         jobs.finishJob(data.jobId, true)
       } else if (data.status === 'failed') {
         pairs.updatePairStatus(data.jobId, 'error', data.error || 'Failed')
+        videos.updateStatus(data.jobId, 'error', data.error || 'Failed')
         jobs.finishJob(data.jobId, false)
         jobs.addLog(`Job failed: ${data.error}`, 'error')
       } else if (data.status === 'processing') {
         pairs.updatePairStatus(data.jobId, 'processing')
+        videos.updateStatus(data.jobId, 'processing')
       }
     }
 

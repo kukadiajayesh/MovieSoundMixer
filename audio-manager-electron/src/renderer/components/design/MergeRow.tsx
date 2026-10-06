@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { MergePair, MergeSource, isRunnable, useMergeStore } from '../../stores/mergeStore'
-import { channelLabel, containerLabel, fileExt, fmtDuration, fmtOffset, fmtOffsetShort, fmtSize } from '../../lib/mediaLabels'
-import { getVideoThumbnail } from '../../lib/thumbnailCache'
+import { containerLabel, fileExt, fmtDuration, fmtOffset, fmtOffsetShort } from '../../lib/mediaLabels'
 import { Icon } from './Icon'
 import { StatusCell, RowStatus } from './StatusCell'
+import { VideoCard } from './VideoCard'
 
 interface MergeRowProps {
   pair: MergePair
@@ -14,33 +14,11 @@ interface MergeRowProps {
   onOpenChannelPicker: (audio: MergeSource, anchor: HTMLElement) => void
   syncOpen: boolean
   onOpenSync: () => void
-  // Shown only when the merge re-encodes the video.
-  showEncodeTest: boolean
-  encodeTestOpen: boolean
-  onOpenEncodeTest: () => void
   onClearAudio: () => void
   onOpenVideo: (path: string) => void
   onRetry: () => void
   onCancel: () => void
   onRemove: () => void
-}
-
-// The video's own embedded audio track — informational, non-interactive
-// (the pick that actually matters is the source audio file's stream-pick
-// chip below, not this).
-const StreamBadges: React.FC<{ source: MergeSource; pill?: boolean }> = ({ source, pill }) => {
-  if (!source.streams || source.streams.length === 0) return null
-  const picked = source.streams.find((s) => s.index === source.selectedStreamIndex) ?? source.streams[0]
-  const ch = channelLabel(picked.channels)
-  const cls = `mc-tag${pill ? ' pill' : ''}`
-  // probeSource stands in an 'unknown' stream when a file has no audio.
-  if (picked.codec === 'unknown') return <span className={cls}>No audio</span>
-  return (
-    <>
-      <span className={cls}>{picked.codec.toUpperCase()}</span>
-      {ch && <span className={cls}>{ch}</span>}
-    </>
-  )
 }
 
 export const MergeRow: React.FC<MergeRowProps> = ({
@@ -52,18 +30,13 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   onOpenChannelPicker,
   syncOpen,
   onOpenSync,
-  showEncodeTest,
-  encodeTestOpen,
-  onOpenEncodeTest,
   onClearAudio,
   onOpenVideo,
   onRetry,
   onCancel,
   onRemove,
 }) => {
-  const videoDuration = fmtDuration(p.video.duration)
   const audioDuration = fmtDuration(p.audio?.duration)
-  const videoSize = fmtSize(p.video.size)
 
   const offsetMs = p.audioOffsetMs ?? 0
   const syncTip = `Audio sync: ${offsetMs === 0 ? 'no shift' : fmtOffset(offsetMs)}. Click to adjust or preview.`
@@ -74,99 +47,47 @@ export const MergeRow: React.FC<MergeRowProps> = ({
   const videoAudio = (p.video.streams ?? []).filter((s) => s.codec !== 'unknown')
   const pickedAudio = p.audio?.streams?.find((s) => s.index === p.audio!.selectedStreamIndex) ?? p.audio?.streams?.[0]
 
-  const [thumb, setThumb] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    setThumb(null)
-    getVideoThumbnail(p.video.path).then((url) => {
-      if (!cancelled) setThumb(url)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [p.video.path])
-
   return (
     <div className={`merge-row ${disabled ? 'is-disabled' : ''}`}>
-      <div className="media-card video">
-        <div className="mc-video-body">
-          <div
-            className="mc-thumb"
-            onClick={disabled ? undefined : () => onOpenVideo(p.video.path)}
-            data-tip={disabled ? undefined : "Click to preview this video"}
-          >
-            {thumb ? (
-              <>
-                <img src={thumb} alt="" />
-                <span className="mc-thumb-play">
-                  <Icon name="play" />
+      <VideoCard
+        video={p.video}
+        episode={p.episode}
+        disabled={disabled}
+        onOpenVideo={onOpenVideo}
+        badgesExtra={
+          videoAudio.length > 0 && (
+            <button
+              type="button"
+              className={`track-toggle ${tracksOpen ? 'open' : ''}`}
+              onClick={() => setTracksOpen((o) => !o)}
+              disabled={disabled}
+              data-tip="Rename this video's audio tracks"
+            >
+              Titles
+            </button>
+          )
+        }
+      >
+        {tracksOpen && videoAudio.length > 0 && (
+          <div className="track-titles">
+            {videoAudio.map((s, i) => (
+              <label key={s.index} className="track-title-row">
+                <span className="lbl">
+                  #{i + 1} {s.language ? s.language.toUpperCase() : ''} {s.codec.toUpperCase()}
                 </span>
-              </>
-            ) : (
-              <span className="mc-icon video">
-                <Icon name="play" />
-              </span>
-            )}
-          </div>
-          <div className="mc-video-content">
-            <div className="mc-title" title={p.video.name}>
-              {p.video.name}
-            </div>
-            <div className="mc-meta divided">
-              {videoDuration && (
-                <span>
-                  <Icon name="history" /> {videoDuration}
-                </span>
-              )}
-              {videoSize && (
-                <span>
-                  <Icon name="extract" /> {videoSize}
-                </span>
-              )}
-              <span>
-                <Icon name="file" /> {containerLabel(fileExt(p.video.name))}
-              </span>
-              {p.episode && <span className="mono">{p.episode}</span>}
-            </div>
-            <div className="mc-badges">
-              <Icon name="layers" className="ico mc-badges-icon" />
-              {p.video.resolution && <span className="mc-tag pill">{p.video.resolution}</span>}
-              {p.video.videoCodec && <span className="mc-tag pill">{p.video.videoCodec}</span>}
-              <StreamBadges source={p.video} pill />
-              {videoAudio.length > 0 && (
-                <button
-                  type="button"
-                  className={`track-toggle ${tracksOpen ? 'open' : ''}`}
-                  onClick={() => setTracksOpen((o) => !o)}
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={p.videoTrackTitles?.[i] ?? s.title ?? ''}
+                  placeholder={s.title || 'Track title'}
                   disabled={disabled}
-                  data-tip="Rename this video's audio tracks"
-                >
-                  Titles
-                </button>
-              )}
-            </div>
-            {tracksOpen && videoAudio.length > 0 && (
-              <div className="track-titles">
-                {videoAudio.map((s, i) => (
-                  <label key={s.index} className="track-title-row">
-                    <span className="lbl">
-                      #{i + 1} {s.language ? s.language.toUpperCase() : ''} {s.codec.toUpperCase()}
-                    </span>
-                    <input
-                      type="text"
-                      maxLength={200}
-                      value={p.videoTrackTitles?.[i] ?? s.title ?? ''}
-                      placeholder={s.title || 'Track title'}
-                      disabled={disabled}
-                      onChange={(e) => setVideoTrackTitle(p.id, i, e.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-            )}
+                  onChange={(e) => setVideoTrackTitle(p.id, i, e.target.value)}
+                />
+              </label>
+            ))}
           </div>
-        </div>
-      </div>
+        )}
+      </VideoCard>
 
       {p.audio ? (
         <div className="media-card audio">
@@ -238,23 +159,6 @@ export const MergeRow: React.FC<MergeRowProps> = ({
               <span className="lbl">Sync</span>
               <span className="val">{offsetMs === 0 ? '0 ms' : fmtOffsetShort(offsetMs)}</span>
             </button>
-            {showEncodeTest && (
-              <button
-                type="button"
-                className={`sync-pick ${encodeTestOpen ? 'open' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenEncodeTest()
-                }}
-                disabled={disabled}
-                aria-label="Test encode a few seconds with the current settings"
-                aria-expanded={encodeTestOpen}
-                data-tip={disabled ? undefined : 'Test encode a few seconds with the current settings'}
-              >
-                <Icon name="zap" className="ico" />
-                <span className="lbl">Test</span>
-              </button>
-            )}
           </div>
           <input
             type="text"

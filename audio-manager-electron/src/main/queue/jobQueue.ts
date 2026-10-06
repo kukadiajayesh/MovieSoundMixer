@@ -8,13 +8,15 @@ import { insertHistoryItem } from '../db/repository'
 
 export interface Job {
   id: string
-  type: 'extract' | 'merge'
+  type: 'extract' | 'merge' | 'reencode'
   inputPath: string
   outputPath: string
   args: string[]
   duration: number // total input duration in seconds (for calculating progress %)
   binary?: 'ffmpeg' | 'mkvmerge' // which binary the args were built for (defaults to ffmpeg)
 }
+
+const OPERATION_LABEL: Record<Job['type'], string> = { extract: 'EXTRACT', merge: 'MERGE', reencode: 'REENCODE' }
 
 let mainWindow: BrowserWindow | null = null
 const activeProcesses = new Map<string, ChildProcess>()
@@ -293,7 +295,7 @@ function runJob(job: Job) {
 
         insertHistoryItem({
           file: path.basename(job.inputPath),
-          operation: job.type === 'extract' ? 'EXTRACT' : 'MERGE',
+          operation: OPERATION_LABEL[job.type],
           duration: formatElapsed(elapsedMs),
           status: 'Completed',
           logs: [`Job completed successfully. Output: ${job.outputPath}`],
@@ -308,7 +310,7 @@ function runJob(job: Job) {
         })
         insertHistoryItem({
           file: path.basename(job.inputPath),
-          operation: job.type === 'extract' ? 'EXTRACT' : 'MERGE',
+          operation: OPERATION_LABEL[job.type],
           duration: formatElapsed(elapsedMs),
           status: 'Failed',
           logs: [`Job failed with exit code ${code}.`],

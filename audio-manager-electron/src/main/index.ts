@@ -3,6 +3,7 @@ import path from 'path'
 import { setMainWindow, resumeInterruptedJobs } from './queue/jobQueue'
 import { setupIPCHandlers } from './ipc'
 import { clearEncodePreviews } from './ffmpeg/encodePreview'
+import { getEncoderSupport } from './gpu/gpuDetector'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -55,6 +56,9 @@ app.on('ready', async () => {
     console.error('Failed to initialize SQLite database:', err)
   }
   createWindow()
+  // Trial-encode the GPU encoders in the background, so the Re-encode page's
+  // encoder list is ready by the time it's opened.
+  void getEncoderSupport()
 })
 
 app.on('window-all-closed', () => {

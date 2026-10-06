@@ -24,6 +24,8 @@ export interface MergeSource {
   size?: number // bytes
   videoCodec?: string // friendly label, e.g. "H.264" — absent for audio-only files
   resolution?: string // friendly label, e.g. "1080p" — absent for audio-only files
+  bitDepth?: number // the video's bit depth, e.g. 10
+  hdr?: boolean // the video uses an HDR transfer (PQ or HLG)
 }
 
 export interface MergePair {
@@ -71,7 +73,7 @@ export const changedVideoTitles = (p: MergePair): Record<number, string> => {
 /** Whether the pair can run: a new audio track, or title edits alone. */
 export const isRunnable = (p: MergePair): boolean => !!p.audio || Object.keys(changedVideoTitles(p)).length > 0
 
-const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts']
+export const VIDEO_EXTS = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', '3gp', 'ts', 'm2ts']
 
 export const isVideoFile = (name: string) =>
   VIDEO_EXTS.includes((name.split('.').pop() || '').toLowerCase())

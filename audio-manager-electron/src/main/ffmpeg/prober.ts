@@ -16,6 +16,38 @@ export interface ProbeResult {
   streams: AudioStreamInfo[]
   videoCodec?: string // friendly label, e.g. "H.264" — absent for audio-only files
   resolution?: string // friendly label, e.g. "1080p" — absent for audio-only files
+  // The first video stream's pixel format and colour, for re-encoding without
+  // losing 10-bit or HDR. Colour fields use FFmpeg's names (e.g. "bt2020").
+  pixFmt?: string
+  bitDepth?: number
+  colorSpace?: string
+  colorPrimaries?: string
+  colorTransfer?: string
+  hdr?: boolean
+  subtitleCount: number
+}
+
+// "yuv420p10le(tv, bt2020nc/bt2020/smpte2084, progressive), 3840x1600" ->
+// pixel format plus colour space/primaries/transfer. A single colour token
+// ("bt709") means all three are the same.
+function parseVideoFormat(line: string) {
+  const m = line.match(/,\s*([a-z][a-z0-9]*)(?:\(([^)]*)\))?,\s*\d{2,5}x\d{2,5}/i)
+  if (!m) return {}
+  const pixFmt = m[1].toLowerCase()
+  const depth = pixFmt.match(/p(9|10|12|14|16)(?:le|be)?$/) ?? pixFmt.match(/^p0(10|12|16)/)
+  const out: Partial<ProbeResult> = { pixFmt, bitDepth: depth ? parseInt(depth[1], 10) : 8 }
+  for (const part of (m[2] ?? '').split(',').map((s) => s.trim())) {
+    if (part.includes('/')) {
+      const [space, primaries, transfer] = part.split('/')
+      out.colorSpace = space
+      out.colorPrimaries = primaries
+      out.colorTransfer = transfer
+    } else if (/^(bt|smpte|arib|iec|ycgco|fcc|gbr)/i.test(part)) {
+      out.colorSpace = out.colorPrimaries = out.colorTransfer = part
+    }
+  }
+  out.hdr = out.colorTransfer === 'smpte2084' || out.colorTransfer === 'arib-std-b67'
+  return out
 }
 
 // ffmpeg codec token -> friendly display label.
@@ -66,6 +98,8 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
         let duration = 0
         let videoCodec: string | undefined
         let resolution: string | undefined
+        let videoFormat: Partial<ProbeResult> = {}
+        let subtitleCount = 0
 
         // Split stderr by lines
         const lines = stderrData.split('\n')
@@ -103,8 +137,10 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
             if (vMatch) {
               videoCodec = labelForVideoCodec(vMatch[1])
               resolution = labelForResolution(parseInt(vMatch[3], 10))
+              videoFormat = parseVideoFormat(line)
             }
           }
+          if (/Stream #0:\d+.*?:\s*Subtitle:/.test(line)) subtitleCount++
 
           // Check for audio stream match
           const match = line.match(audioStreamRegex)
@@ -155,7 +191,7 @@ export function probeStreams(filePath: string): Promise<ProbeResult> {
           }
         }
 
-        resolve({ duration, streams, videoCodec, resolution })
+        resolve({ duration, streams, videoCodec, resolution, ...videoFormat, subtitleCount })
       } catch (err) {
         reject(err)
       }

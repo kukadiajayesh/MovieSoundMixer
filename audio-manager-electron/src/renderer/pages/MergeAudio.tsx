@@ -2,27 +2,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useMergeStore, MergePair, MergeSource, isVideoFile, audioOrdinal, isRunnable, changedVideoTitles } from '../stores/mergeStore'
 import { useJobStore, selectOverall } from '../stores/jobStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { useThemeStore, ThemeType } from '../stores/themeStore'
 import { fmtOffset } from '../lib/mediaLabels'
 import { SyncPanel } from '../components/design/SyncPanel'
-import { EncodePanel } from '../components/design/EncodePanel'
+import { probeSource } from '../lib/probeSource'
 import { Icon, IconName } from '../components/design/Icon'
+import { ThemeToggle } from '../components/design/ThemeToggle'
 import { Dropzone } from '../components/design/Dropzone'
 import { MergeRow } from '../components/design/MergeRow'
 import { RunFooter } from '../components/design/RunFooter'
 import { RowStatus } from '../components/design/StatusCell'
 import { StreamPicker } from '../components/design/StreamPicker'
-import { Switch } from '../components/design/Switch'
 import { useToast } from '../components/design/Toasts'
 import appLogo from '../../../assets/icon.png'
 
 type Backend = 'auto' | 'mkvmerge' | 'ffmpeg'
-type Quality = 'fast' | 'balanced' | 'quality'
-
-// Video codecs WebM can hold without re-encoding. Keep in step with
-// WEBM_VIDEO_CODECS in src/main/ffmpeg/videoEncode.ts.
-const WEBM_VIDEO_CODECS = ['VP8', 'VP9', 'AV1']
 
 // Video + external-audio extensions the folder importer should pull in.
 const MEDIA_EXTS = [
@@ -30,17 +23,8 @@ const MEDIA_EXTS = [
   'mp3', 'aac', 'flac', 'wav', 'm4a', 'ogg', 'wma', 'eac3', 'ac3', 'dts', 'mka',
 ]
 
-// Theme toggle cycles through these three modes in this order.
-const THEME_CYCLE: ThemeType[] = ['system', 'light', 'dark']
-const THEME_META: Record<ThemeType, { label: string; icon: IconName }> = {
-  system: { label: 'Auto', icon: 'auto' },
-  light: { label: 'Light', icon: 'sun' },
-  dark: { label: 'Dark', icon: 'moon' },
-}
-
-type PanelId = 'gpu' | 'backend' | 'output'
+type PanelId = 'backend' | 'output'
 const PANELS: Array<{ id: PanelId; label: string; icon: IconName }> = [
-  { id: 'gpu', label: 'GPU Acceleration', icon: 'zap' },
   { id: 'backend', label: 'Merge Backend', icon: 'layers' },
   { id: 'output', label: 'Output', icon: 'settings' },
 ]
@@ -70,21 +54,15 @@ export const MergeAudio: React.FC = () => {
   const running = useJobStore((s) => s.running)
   const overall = useJobStore(useShallow(selectOverall))
   const jobs = useJobStore((s) => s.jobs)
-  const { gpuEnabled, updateSetting } = useSettingsStore()
   const toast = useToast()
 
   const [outputDir, setOutputDir] = useState('')
   const [container, setContainer] = useState<'mkv' | 'mp4' | 'webm'>('mkv')
   const [mergeMode, setMergeMode] = useState<'replace' | 'secondary'>('secondary')
-  const copyVideo = !gpuEnabled
   const [backend, setBackend] = useState<Backend>('auto')
-  const [quality, setQuality] = useState<Quality>('balanced')
-  const [gpuEncoders, setGpuEncoders] = useState<string[]>([])
-  const [encoder, setEncoder] = useState<string>('') // '' = auto-pick best
   const [backendAvailable, setBackendAvailable] = useState({ ffmpeg: false, mkvmerge: false })
   const [assigning, setAssigning] = useState<string | null>(null)
   const [syncPairId, setSyncPairId] = useState<string | null>(null)
-  const [encodePairId, setEncodePairId] = useState<string | null>(null)
   const [channelPicker, setChannelPicker] = useState<{ pairId: string; audio: MergeSource; anchor: HTMLElement } | null>(
     null,
   )
@@ -92,7 +70,6 @@ export const MergeAudio: React.FC = () => {
   // Settings panels start collapsed; only one can be open at a time.
   const [openPanel, setOpenPanel] = useState<PanelId | null>(null)
   const open: Record<PanelId, boolean> = {
-    gpu: openPanel === 'gpu',
     backend: openPanel === 'backend',
     output: openPanel === 'output',
   }
@@ -114,11 +91,6 @@ export const MergeAudio: React.FC = () => {
 
   // Short note shown under a chip when its settings differ from the defaults.
   const panelSummary: Record<PanelId, string | null> = {
-    gpu: gpuEnabled
-      ? ['On', encoder, quality !== 'balanced' ? quality[0].toUpperCase() + quality.slice(1) : '']
-          .filter(Boolean)
-          .join(' · ')
-      : null,
     backend: backend !== 'auto' ? (backend === 'mkvmerge' ? 'mkvmerge' : 'FFmpeg') : null,
     output:
       [container !== 'mkv' ? container.toUpperCase() : '', mergeMode === 'replace' ? 'Replace audio' : '']
@@ -135,15 +107,10 @@ export const MergeAudio: React.FC = () => {
     setOpenPanel((cur) => (cur === id ? null : id))
   }
 
-  const { theme, setTheme } = useThemeStore()
-  const cycleTheme = () => setTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length])
-  const { label: themeLabel, icon: themeIcon } = THEME_META[theme]
-
   useEffect(() => {
     window.electron?.ipcRenderer
       ?.invoke('get-dependency-status')
       .then((d) => {
-        setGpuEncoders(d?.gpuInfo?.available ?? [])
         setBackendAvailable({ ffmpeg: !!d?.ffmpegAvailable, mkvmerge: !!d?.mkvmergeAvailable })
       })
       .catch(() => {})
@@ -153,17 +120,6 @@ export const MergeAudio: React.FC = () => {
   const syncPair = syncPairId ? pairs.find((p) => p.id === syncPairId) : undefined
   // Stable, so the panel's listeners aren't re-attached on every render.
   const closeSync = useCallback(() => setSyncPairId(null), [])
-  const encodePair = encodePairId ? pairs.find((p) => p.id === encodePairId) : undefined
-  const closeEncode = useCallback(() => setEncodePairId(null), [])
-
-  // Whether merging this pair re-encodes its video — the same decision
-  // start-merge makes, so the Test button only shows when there's an encode
-  // to test. mkvmerge never re-encodes; WebM re-encodes anything it can't hold.
-  const usesMkvmerge = backend === 'mkvmerge' || (backend === 'auto' && container === 'mkv' && backendAvailable.mkvmerge)
-  const reencodes = (p: MergePair) =>
-    !!p.audio &&
-    !usesMkvmerge &&
-    (container === 'webm' ? !(copyVideo && WEBM_VIDEO_CODECS.includes(p.video.videoCodec ?? '')) : !copyVideo)
 
   // ── Ingestion ─────────────────────────────────────────────────────
   const ingest = (entries: Array<{ name: string; path: string }>) => {
@@ -194,38 +150,6 @@ export const MergeAudio: React.FC = () => {
         }))
         .filter((e) => e.path),
     )
-  }
-
-  // Probes one source file for duration, video info (resolution/codec, if
-  // it's a video), and audio streams — the same probe whether the file ends
-  // up playing the "video" or "audio" role in a pair, and whether it's a
-  // plain audio file or a video used as the audio donor with a channel picked.
-  const probeSource = async (entry: { name: string; path: string }): Promise<Partial<MergeSource>> => {
-    if (!window.electron?.ipcRenderer) return {}
-    try {
-      const res = await window.electron.ipcRenderer.invoke('probe-streams', entry.path)
-      if (!res?.success) return {}
-      const props = await window.electron.ipcRenderer
-        .invoke('get-file-properties', entry.path)
-        .catch(() => null)
-      let streams: MergeSource['streams'] = res.streams
-      if (!streams || streams.length === 0) {
-        // No detectable audio — still surface it so the reason is visible in the UI
-        streams = [{ index: 0, codec: 'unknown', channels: 2 }]
-      }
-      const preferred = streams.find((s) => s.isDefault) ?? streams[0]
-      return {
-        streams,
-        selectedStreamIndex: preferred.index,
-        duration: res.duration,
-        size: props?.exists ? props.size : undefined,
-        videoCodec: res.videoCodec,
-        resolution: res.resolution,
-      }
-    } catch (err) {
-      console.error('Failed to probe source:', err)
-      return {}
-    }
   }
 
   // Fills in duration/codec/resolution for every pair whose video or audio
@@ -358,19 +282,13 @@ export const MergeAudio: React.FC = () => {
         audioStreamIndex,
         outContainer: container,
         outFolder: outputDir,
-        copyVideo,
         mergeMode,
         duration,
         backend,
-        quality,
-        encoder: encoder || undefined,
         audioOffsetMs: offsetMs,
         audioTitle,
         videoTrackTitles: videoTitles,
       })
-      if (res?.success && res.note) {
-        useJobStore.getState().addLog(`${p.video.name}: ${res.note}`, 'warn')
-      }
       if (res?.success && res.detail) {
         useJobStore.getState().addLog(`${p.video.name}: ${res.detail}`)
       }
@@ -483,15 +401,7 @@ export const MergeAudio: React.FC = () => {
           </div>
         </div>
         <div className="ph-actions">
-          <button
-            className="btn btn-ghost"
-            onClick={cycleTheme}
-            aria-label="Click to change theme (Auto → Light → Dark)"
-            data-tip="Click to change theme (Auto → Light → Dark)"
-          >
-            <Icon name={themeIcon} />
-            {themeLabel}
-          </button>
+          <ThemeToggle />
           <button className="btn btn-ghost" onClick={clearPairs} disabled={pairs.length === 0 || running}>
             <Icon name="trash" />
             Clear
@@ -558,19 +468,10 @@ export const MergeAudio: React.FC = () => {
                 syncOpen={syncPairId === p.id}
                 onOpenSync={() => {
                   setChannelPicker(null)
-                  setEncodePairId(null)
                   setSyncPairId(p.id)
-                }}
-                showEncodeTest={reencodes(p)}
-                encodeTestOpen={encodePairId === p.id}
-                onOpenEncodeTest={() => {
-                  setChannelPicker(null)
-                  setSyncPairId(null)
-                  setEncodePairId(p.id)
                 }}
                 onOpenChannelPicker={(audio, anchor) => {
                   setSyncPairId(null)
-                  setEncodePairId(null)
                   setChannelPicker((prev) =>
                     prev && prev.pairId === p.id ? null : { pairId: p.id, audio, anchor }
                   )
@@ -593,17 +494,6 @@ export const MergeAudio: React.FC = () => {
           onChange={(ms) => setPairOffset(syncPair.id, ms)}
           onPickTrack={(index) => updateAudioStreamIndex(syncPair.id, index)}
           onClose={closeSync}
-        />
-      )}
-
-      {encodePair && reencodes(encodePair) && !running && (
-        <EncodePanel
-          pair={encodePair}
-          outContainer={container}
-          copyVideo={copyVideo}
-          quality={quality}
-          encoder={encoder}
-          onClose={closeEncode}
         />
       )}
 
@@ -640,53 +530,8 @@ export const MergeAudio: React.FC = () => {
           </button>
         ))}
       </div>
-      {(open.gpu || open.backend || open.output) && (
+      {(open.backend || open.output) && (
       <div className="cards" style={{ ['--panel-offset' as string]: `${panelOffset}px` }}>
-        {open.gpu && (
-        <div className="card">
-          <div className="card-head">
-            <Icon name="zap" className={`ico ${gpuEnabled ? 'ico-glow ico-glow-accent' : ''}`} />
-            <span>GPU Acceleration</span>
-            <Switch on={gpuEnabled} onChange={(v) => updateSetting('gpu_enabled', String(v))} label="" />
-          </div>
-          <div className="switch-desc">
-            {gpuEnabled ? 'Hardware encoding (re-encodes video)' : 'Copy video stream (no re-encode, fastest)'}
-          </div>
-          <div className={`field ${!gpuEnabled ? 'is-disabled' : ''}`}>
-            <label>
-              {gpuEncoders.length > 0
-                ? `Encoder (${gpuEncoders.length} detected)`
-                : 'No GPU encoders detected — CPU libx264 will be used'}
-            </label>
-            {gpuEncoders.length > 0 && (
-              <select value={encoder} onChange={(e) => setEncoder(e.target.value)} disabled={!gpuEnabled}>
-                <option value="">Auto (best available)</option>
-                {gpuEncoders.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className={`field ${!gpuEnabled ? 'is-disabled' : ''}`}>
-            <label>Quality (used when re-encoding)</label>
-            <div className="seg">
-              {(['fast', 'balanced', 'quality'] as Quality[]).map((q) => (
-                <button
-                  key={q}
-                  className={quality === q ? 'on' : ''}
-                  disabled={!gpuEnabled}
-                  onClick={() => setQuality(q)}
-                >
-                  {q[0].toUpperCase() + q.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        )}
-
         {open.backend && (
         <div className="card">
           <div className="card-head">
@@ -761,8 +606,8 @@ export const MergeAudio: React.FC = () => {
             </div>
             {container === 'webm' && (
               <div className="field-note">
-                WebM re-encodes audio to Opus, and video to VP9 unless it&apos;s already VP8, VP9 or AV1. Expect it to be
-                slower than MKV or MP4.
+                WebM re-encodes audio to Opus and only holds VP8, VP9 or AV1 video. Merging never re-encodes video, so
+                re-encode other videos to VP9 on Re-encode Video first.
               </div>
             )}
           </div>

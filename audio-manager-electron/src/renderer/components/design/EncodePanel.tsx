@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { MergePair, audioOrdinal } from '../../stores/mergeStore'
+import { MergeSource } from '../../stores/mergeStore'
 import { fmtClock, fmtDuration, fmtSize, parseClock } from '../../lib/mediaLabels'
 import { Icon } from './Icon'
 import { toArrayBuffer } from './SyncPanel'
 
 const TEST_LENGTHS = [5, 10, 20] as const
 type TestLength = (typeof TEST_LENGTHS)[number]
-type Quality = 'fast' | 'balanced' | 'quality'
+export type Quality = 'fast' | 'balanced' | 'quality'
+export type ReencodeContainer = 'source' | 'mkv' | 'mp4' | 'webm'
 
 type Result =
   | { status: 'idle' }
@@ -17,6 +18,7 @@ type Result =
       bytes: number
       elapsedMs: number
       encoderLabel: string
+      notes: string[]
       startSec: number
       length: number
       settings: string // what it was rendered with, to flag a stale clip
@@ -30,16 +32,15 @@ type Frames =
   | { status: 'error'; error: string }
 
 interface EncodePanelProps {
-  pair: MergePair
-  // The merge settings the test encodes with — the same values runPair sends.
-  outContainer: 'mkv' | 'mp4' | 'webm'
-  copyVideo: boolean
+  item: { id: string; video: MergeSource }
+  // The settings the test encodes with — the same values a re-encode job gets.
+  outContainer: ReencodeContainer
   quality: Quality
   encoder: string
   onClose: () => void
 }
 
-const QUALITY_LABEL: Record<Quality, string> = { fast: 'Fast', balanced: 'Balanced', quality: 'Quality' }
+export const QUALITY_LABEL: Record<Quality, string> = { fast: 'Fast', balanced: 'Balanced', quality: 'Quality' }
 
 const loadSize = (url: string): Promise<{ width: number; height: number }> =>
   new Promise((resolve, reject) => {
@@ -49,10 +50,10 @@ const loadSize = (url: string): Promise<{ width: number; height: number }> =>
     img.src = url
   })
 
-// Test encode: render a few seconds with the merge's exact video settings,
+// Test encode: render a few seconds with the re-encode's exact video settings,
 // play them, project the full file's encode time and size, and compare one
 // full-resolution frame against the original.
-export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, copyVideo, quality, encoder, onClose }) => {
+export const EncodePanel: React.FC<EncodePanelProps> = ({ item: pair, outContainer, quality, encoder, onClose }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [length, setLength] = useState<TestLength>(10)
   const [startText, setStartText] = useState('0:00')
@@ -65,9 +66,7 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
   const renderReq = useRef(0)
   const frameReq = useRef(0)
 
-  const offsetMs = pair.audioOffsetMs ?? 0
-  const track = pair.audio ? audioOrdinal(pair.audio) : 0
-  const settings = JSON.stringify([outContainer, copyVideo, quality, encoder, offsetMs, track, pair.audio?.path])
+  const settings = JSON.stringify([outContainer, quality, encoder])
   const duration = pair.video.duration
 
   const maxStart = duration ? Math.max(0, Math.floor(duration - length)) : undefined
@@ -111,7 +110,7 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
 
   const render = async () => {
     const ipc = window.electron?.ipcRenderer
-    if (!ipc || !pair.audio || startSec === null || startError) return
+    if (!ipc || startSec === null || startError) return
     const id = ++renderReq.current
     frameReq.current++
     setResult({ status: 'rendering' })
@@ -122,13 +121,9 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
       .invoke('render-encode-preview', {
         key: pair.id,
         videoPath: pair.video.path,
-        audioPath: pair.audio.path,
-        audioStreamIndex: track,
-        offsetMs,
         startSec,
         durationSec: length,
         outContainer,
-        copyVideo,
         quality,
         encoder: encoder || undefined,
       })
@@ -138,13 +133,15 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
       setResult({ status: 'error', error: res?.error || 'Test encode failed' })
       return
     }
-    const type = outContainer === 'webm' ? 'video/webm' : 'video/mp4'
+    // VP9 clips are WebM, everything else MP4 (see renderEncodePreview).
+    const type = res.encoderLabel === 'libvpx-vp9' ? 'video/webm' : 'video/mp4'
     setResult({
       status: 'ready',
       clipUrl: URL.createObjectURL(new Blob([toArrayBuffer(res.clip)], { type })),
       bytes: res.bytes,
       elapsedMs: res.elapsedMs,
       encoderLabel: res.encoderLabel,
+      notes: res.notes ?? [],
       startSec,
       length,
       settings,
@@ -197,7 +194,11 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
   // seek time, so the speed tends to read a little low.
   const speed = ready && ready.elapsedMs > 0 ? ready.length / (ready.elapsedMs / 1000) : null
   const estTime = speed && duration ? duration / speed : null
-  const estSize = ready && duration ? (ready.bytes / ready.length) * duration : null
+  // The clip carries 192 kb/s of listening audio the job doesn't make (it
+  // copies the original tracks), so estimate the new video stream alone.
+  const hasAudio = (pair.video.streams ?? []).some((s) => s.codec !== 'unknown')
+  const clipVideoBytes = ready ? Math.max(0, ready.bytes - (hasAudio ? (192_000 / 8) * ready.length : 0)) : 0
+  const estSize = ready && duration ? (clipVideoBytes / ready.length) * duration : null
 
   return (
     <>
@@ -216,10 +217,12 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
         </div>
 
         <div className="sp-note">
-          {[ready?.encoderLabel ?? (encoder || 'Auto encoder'), QUALITY_LABEL[quality], outContainer.toUpperCase()].join(
-            ' · ',
-          )}{' '}
-          — the same video settings the merge will use, at full resolution.
+          {[
+            ready?.encoderLabel ?? (encoder && encoder !== 'auto' ? encoder : 'Auto encoder'),
+            QUALITY_LABEL[quality],
+            outContainer === 'source' ? 'Same container' : outContainer.toUpperCase(),
+          ].join(' · ')}{' '}
+          — the same video settings the re-encode will use, at full resolution.
         </div>
 
         <div className="sync-row sp-window">
@@ -256,7 +259,7 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
             <button
               className="btn btn-primary btn-sm sp-go"
               onClick={() => void render()}
-              disabled={!pair.audio || !!startError}
+              disabled={!!startError}
             >
               <Icon name="zap" />
               {ready ? 'Encode again' : 'Encode test'}
@@ -279,12 +282,18 @@ export const EncodePanel: React.FC<EncodePanelProps> = ({ pair, outContainer, co
               )}
               {estSize !== null && (
                 <span>
-                  size ≈ <b>{fmtSize(estSize)}</b>
-                  {pair.video.size ? ` (now ${fmtSize(pair.video.size)})` : ''}
+                  video ≈ <b>{fmtSize(estSize)}</b>
+                  {hasAudio ? (ready.encoderLabel === 'libvpx-vp9' ? ' + Opus audio' : ' + audio/subtitles as-is') : ''}
+                  {pair.video.size ? ` (file now ${fmtSize(pair.video.size)})` : ''}
                 </span>
               )}
               <span className="sp-note">approx., from a {ready.length} s test</span>
             </div>
+            {ready.notes.map((n) => (
+              <div key={n} className="sp-note warn">
+                {n}
+              </div>
+            ))}
             {stale && <div className="sp-note warn">Settings changed since this test. Encode again to see them.</div>}
 
             <div className="seg ep-tabs" role="tablist" aria-label="Test encode view">

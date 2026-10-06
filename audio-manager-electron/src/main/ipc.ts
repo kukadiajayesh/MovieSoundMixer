@@ -8,13 +8,34 @@ import { getPeaks } from './ffmpeg/waveform'
 import { mkvmergeStartShift } from './ffmpeg/startShift'
 import { identifyMkv } from './ffmpeg/mkv'
 import { getFFmpegPath, getMkvmergePath } from './ffmpeg/detector'
-import { detectGPUEncoders } from './gpu/gpuDetector'
-import { buildVideoEncodeArgs } from './ffmpeg/videoEncode'
+import { getEncoderSupport } from './gpu/gpuDetector'
+import {
+  buildVideoEncodeArgs,
+  isHevcEncoder,
+  Quality,
+  WEBM_VIDEO_CODECS,
+  CPU_ENCODERS,
+  OPUS_ARGS,
+  OPUS_LAYOUT_FILTER,
+} from './ffmpeg/videoEncode'
 import { renderEncodePreview, grabCompareFrames, cancelEncodePreview, getEncodePreviewPath } from './ffmpeg/encodePreview'
 import { enqueueJob, cancelJob, pauseQueue, resumeQueue, setConcurrency, Job } from './queue/jobQueue'
 import { validateInputFile, validateOutputPath, resolveOutputPath, getFileProperties } from './files/fileManager'
 import { validateSetting } from './settings/settingsManager'
 import * as db from './db/repository'
+
+type ReencodeContainer = 'source' | 'mkv' | 'mp4' | 'webm'
+const REENCODE_CONTAINERS: ReencodeContainer[] = ['source', 'mkv', 'mp4', 'webm']
+
+// Output extension for a re-encode: "source" keeps the video's own container
+// when it's one we write, otherwise MKV (which holds every track type).
+function reencodeExt(container: ReencodeContainer, videoPath: string): 'mkv' | 'mp4' | 'webm' {
+  if (container !== 'source') return container
+  const ext = path.extname(videoPath).slice(1).toLowerCase()
+  if (ext === 'mp4' || ext === 'm4v') return 'mp4'
+  if (ext === 'webm') return 'webm'
+  return 'mkv'
+}
 
 // Largest A/V sync shift accepted for a merge, either direction. Keep in step
 // with MAX_OFFSET_MS in the renderer's SyncControls.
@@ -94,13 +115,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('probe-streams', async (_event, filePath: string) => {
     try {
       const result = await probeStreams(filePath)
-      return {
-        success: true,
-        duration: result.duration,
-        streams: result.streams,
-        videoCodec: result.videoCodec,
-        resolution: result.resolution,
-      }
+      return { success: true, ...result }
     } catch (err: any) {
       console.error(`Failed to probe streams for ${filePath}:`, err)
       return { success: false, error: err.message, streams: [] }
@@ -172,9 +187,10 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
     cancelSyncPreview(String(key))
   })
 
-  // 3c2. Test encode: a few seconds encoded with exactly the merge's video
-  // settings (encoder, quality, full resolution), returned as bytes with how
-  // long it took, so the renderer can show it and project the full file.
+  // 3c2. Test encode: a few seconds encoded with exactly the re-encode job's
+  // video settings (encoder, quality, bit depth, colour, full resolution),
+  // returned as bytes with how long it took, so the renderer can show it and
+  // project the full file.
   ipcMain.handle(
     'render-encode-preview',
     async (
@@ -182,45 +198,31 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       payload: {
         key: string
         videoPath: string
-        audioPath: string
-        audioStreamIndex?: number
-        offsetMs?: number
         startSec?: number
         durationSec: number
-        outContainer: string
-        copyVideo: boolean
-        quality?: 'fast' | 'balanced' | 'quality'
+        outContainer: ReencodeContainer
+        quality?: Quality
         encoder?: string
       },
     ) => {
-      const offsetMs = Math.round(payload.offsetMs ?? 0)
       const startSec = Math.max(0, payload.startSec ?? 0)
-      if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > MAX_AUDIO_OFFSET_MS) {
-        return { success: false, error: `Audio offset must be within ±${MAX_AUDIO_OFFSET_MS / 1000} s` }
-      }
       if (!Number.isFinite(startSec) || ![5, 10, 20].includes(payload.durationSec)) {
         return { success: false, error: 'Invalid preview range' }
       }
-      if (!['mkv', 'mp4', 'webm'].includes(payload.outContainer)) {
+      if (!REENCODE_CONTAINERS.includes(payload.outContainer)) {
         return { success: false, error: 'Unknown output container' }
       }
-      for (const p of [payload.videoPath, payload.audioPath]) {
-        const check = validateInputFile(p)
-        if (!check.valid) return { success: false, error: check.error }
-      }
+      const check = validateInputFile(payload.videoPath)
+      if (!check.valid) return { success: false, error: check.error }
       try {
-        const videoInfo = await probeStreams(payload.videoPath).catch(() => null)
+        const source = await probeStreams(payload.videoPath).catch(() => null)
         const res = await renderEncodePreview({
           key: String(payload.key),
           videoPath: payload.videoPath,
-          audioPath: payload.audioPath,
-          audioStreamIndex: Math.max(0, payload.audioStreamIndex ?? 0),
-          offsetMs,
           startSec,
           durationSec: payload.durationSec,
-          videoInfo,
-          outContainer: payload.outContainer,
-          copyVideo: !!payload.copyVideo,
+          source,
+          outContainer: reencodeExt(payload.outContainer, payload.videoPath),
           quality: payload.quality,
           encoder: payload.encoder,
         })
@@ -299,14 +301,16 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       mkvmergeAvailable = mkvPath !== null
     } catch (err) {}
 
-    const gpuInfo = detectGPUEncoders()
+    // Only encoders that passed a trial encode on this machine.
+    const { working, tenBit } = await getEncoderSupport()
 
     return {
       ffmpegAvailable,
       ffmpegVersion,
       mkvmergeAvailable,
-      gpuActive: gpuInfo.available.length > 0,
-      gpuInfo,
+      gpuActive: working.length > 0,
+      gpuInfo: { available: working, tenBit },
+      cpuEncoders: CPU_ENCODERS,
     }
   })
 
@@ -327,15 +331,10 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         audioStreamIndex?: number
         outContainer: string
         outFolder: string
-        copyVideo: boolean
         mergeMode: 'replace' | 'secondary'
         duration: number
         overwrite?: boolean
         backend?: 'auto' | 'mkvmerge' | 'ffmpeg'
-        quality?: 'fast' | 'balanced' | 'quality'
-        // User-picked hardware encoder (from the GPU Acceleration dropdown).
-        // Omitted/empty means "auto-pick the best available".
-        encoder?: string
         // A/V sync correction for the added audio track, in milliseconds:
         // positive delays it, negative plays it earlier. The video and any
         // original audio tracks are never shifted. Omitted means no shift.
@@ -347,7 +346,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         videoTrackTitles?: Record<string, string>
       },
     ) => {
-      const { id, videoPath, audioPath, outContainer, outFolder, copyVideo, mergeMode, duration, overwrite } = payload
+      const { id, videoPath, audioPath, outContainer, outFolder, mergeMode, duration, overwrite } = payload
       const backend = payload.backend ?? 'auto'
       const audioStreamIndex = Math.max(0, payload.audioStreamIndex ?? 0)
       const audioOffsetMs = Math.round(payload.audioOffsetMs ?? 0)
@@ -427,7 +426,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
           duration,
           binary: titleBinary,
         })
-        return { success: true, outPath, note: undefined, detail: 'title-only edit (no audio added, streams copied)' }
+        return { success: true, outPath, detail: 'title-only edit (no audio added, streams copied)' }
       }
 
       // mkvmerge only writes Matroska: given an .mp4 name it still writes MKV
@@ -443,9 +442,6 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         (backend === 'auto' && outContainer === 'mkv' && mkvPath !== null)
 
       let args: string[] = []
-      // Explains in the job log when the output differs from the chosen
-      // options (e.g. WebM forcing a re-encode despite "Copy video stream").
-      let note: string | undefined
       // Informational job-log line (e.g. a timing correction applied).
       let detail: string | undefined
       // Options scoping `audioPath` down to exactly the chosen audio track —
@@ -515,6 +511,13 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
         const videoAudioCount = videoInfo ? videoInfo.streams.length : 1
         const videoHasAudio = videoAudioCount > 0
         const webm = outContainer === 'webm'
+        // Merging never re-encodes the video, and WebM only holds VP8/VP9/AV1.
+        if (webm && !(videoInfo?.videoCodec && WEBM_VIDEO_CODECS.includes(videoInfo.videoCodec))) {
+          return {
+            success: false,
+            error: `WebM can't hold ${videoInfo?.videoCodec ?? 'this'} video without re-encoding. Re-encode it to VP9 on Re-encode Video first, or pick MKV/MP4.`,
+          }
+        }
 
         args = ['-y', '-i', videoPath, '-i', audioPath]
 
@@ -545,21 +548,15 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
             audioOffsetMs > 0
               ? `adelay=delays=${audioOffsetMs}:all=1`
               : `atrim=start=${(-audioOffsetMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`
-          args.push(`-filter:a:${addedTrack}`, filter)
+          // This per-stream filter replaces the -af below for the added track,
+          // so it carries the Opus layout conversion itself.
+          args.push(`-filter:a:${addedTrack}`, webm ? `${filter},${OPUS_LAYOUT_FILTER}` : filter)
         }
 
-        const video = await buildVideoEncodeArgs({
-          videoInfo,
-          outContainer,
-          copyVideo,
-          quality: payload.quality,
-          encoder: payload.encoder,
-        })
-        args.push(...video.args)
-        note = video.note
+        args.push('-c:v', 'copy')
 
         if (webm) {
-          args.push('-c:a', 'libopus', '-b:a', '192k', outPath)
+          args.push('-af', OPUS_LAYOUT_FILTER, ...OPUS_ARGS, outPath)
         } else {
           args.push('-c:a', 'aac', '-b:a', '192k', outPath)
         }
@@ -578,11 +575,80 @@ export function setupIPCHandlers(mainWindow: BrowserWindow) {
       }
 
       enqueueJob(job)
-      return { success: true, outPath, note, detail }
+      return { success: true, outPath, detail }
     },
   )
 
   // 7. Cancel running or pending job
+  // 6b. Submit Re-encode Job: re-encode the video stream only (keeping 10-bit
+  // and HDR when the encoder can), copying every audio and subtitle track.
+  ipcMain.handle(
+    'start-reencode',
+    async (
+      _event,
+      payload: {
+        id: string
+        videoPath: string
+        outContainer: ReencodeContainer
+        outFolder: string
+        quality?: Quality
+        encoder?: string
+        overwrite?: boolean
+      },
+    ) => {
+      const { id, videoPath, outFolder } = payload
+      if (!REENCODE_CONTAINERS.includes(payload.outContainer)) {
+        return { success: false, error: 'Unknown output container' }
+      }
+      const check = validateInputFile(videoPath)
+      if (!check.valid) return { success: false, error: check.error }
+
+      const ext = reencodeExt(payload.outContainer, videoPath)
+      const videoName = path.basename(videoPath)
+      const baseName = videoName.substring(0, videoName.lastIndexOf('.')) || videoName
+      let outPath = path.join(outFolder, `${baseName}_reencoded.${ext}`)
+      const outCheck = validateOutputPath(outPath)
+      if (!outCheck.valid) return { success: false, error: outCheck.error }
+      outPath = resolveOutputPath(outPath, payload.overwrite ?? false)
+
+      const source = await probeStreams(videoPath).catch(() => null)
+      if (source && !source.videoCodec) return { success: false, error: 'This file has no video to re-encode' }
+      const video = await buildVideoEncodeArgs({ source, outContainer: ext, quality: payload.quality, encoder: payload.encoder })
+      const notes = [...video.notes]
+
+      // Copy everything first, then re-encode just the first video stream.
+      const args = ['-y', '-i', videoPath, '-map', '0:v:0', '-map', '0:a?']
+      const subs = source?.subtitleCount ?? 0
+      if (ext === 'mkv') {
+        // MKV holds every subtitle type and font attachments.
+        args.push('-map', '0:s?', '-map', '0:t?')
+      } else if (subs > 0) {
+        notes.push(`${ext.toUpperCase()} can't hold this video's subtitles, so they're left out. Use MKV to keep them.`)
+      }
+      args.push('-c', 'copy', ...video.args)
+      if (ext === 'mp4') {
+        if (isHevcEncoder(video.encoderLabel)) args.push('-tag:v', 'hvc1')
+        args.push('-movflags', '+faststart')
+      } else if (ext === 'webm') {
+        // WebM only takes Opus/Vorbis audio, so audio can't be copied here.
+        args.push('-af', OPUS_LAYOUT_FILTER, ...OPUS_ARGS)
+        if ((source?.streams.length ?? 0) > 0) notes.push('WebM only takes Opus audio, so the audio tracks are converted to Opus.')
+      }
+      args.push('-map_metadata', '0', '-map_chapters', '0', outPath)
+
+      enqueueJob({
+        id,
+        type: 'reencode',
+        inputPath: videoPath,
+        outputPath: outPath,
+        args,
+        duration: source?.duration ?? 0,
+        binary: 'ffmpeg',
+      })
+      return { success: true, outPath, encoder: video.encoderLabel, notes }
+    },
+  )
+
   ipcMain.handle('cancel-job', async (_event, jobId: string) => {
     cancelJob(jobId)
     return { success: true }

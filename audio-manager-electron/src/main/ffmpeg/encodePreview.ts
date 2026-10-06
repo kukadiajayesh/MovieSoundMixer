@@ -3,20 +3,16 @@ import path from 'path'
 import { getTempDir } from '../files/fileManager'
 import { runTracked, cancelTracked } from './preview'
 import { ProbeResult } from './prober'
-import { buildVideoEncodeArgs, Quality } from './videoEncode'
+import { buildVideoEncodeArgs, isHevcEncoder, Quality } from './videoEncode'
 
 export interface EncodePreviewRequest {
-  // Identifies who asked (a merge row); a newer request replaces the old clip.
+  // Identifies who asked (a re-encode row); a newer request replaces the old clip.
   key: string
   videoPath: string
-  audioPath: string
-  audioStreamIndex: number // ordinal among audioPath's audio streams (FFmpeg's a:N)
-  offsetMs: number // same meaning as start-merge's audioOffsetMs
   startSec: number
   durationSec: number
-  videoInfo: ProbeResult | null
+  source: ProbeResult | null
   outContainer: string
-  copyVideo: boolean
   quality?: Quality
   encoder?: string
 }
@@ -26,6 +22,7 @@ export interface EncodePreview {
   bytes: number
   elapsedMs: number
   encoderLabel: string
+  notes: string[]
 }
 
 // The last rendered clip per key. Kept on disk (until replaced, cancelled or
@@ -59,28 +56,20 @@ export function getEncodePreviewPath(key: string): string | null {
 }
 
 // Encodes a short stretch of the video with exactly the video settings the
-// merge would use (same encoder, preset and full resolution), plus the new
-// audio track shifted as the merge shifts it, and times the run so the
-// renderer can project the full file's encode time and size.
+// re-encode job would use (same encoder, preset, bit depth and colour, full
+// resolution), with the video's first audio track for listening, and times
+// the run so the renderer can project the full file's encode time and size.
 export async function renderEncodePreview(req: EncodePreviewRequest): Promise<EncodePreview> {
   cancelEncodePreview(req.key)
 
   const video = await buildVideoEncodeArgs({
-    videoInfo: req.videoInfo,
+    source: req.source,
     outContainer: req.outContainer,
-    copyVideo: req.copyVideo,
     quality: req.quality,
     encoder: req.encoder,
   })
-  if (!video.reencode) {
-    throw new Error('This merge copies the video, so there is nothing to test')
-  }
 
   const webm = req.outContainer === 'webm'
-  // Output time t plays source audio from t - offset; see renderSyncPreview.
-  const audioStart = req.startSec - req.offsetMs / 1000
-  const padMs = audioStart < 0 ? Math.round(-audioStart * 1000) : 0
-  const audioFilter = `${padMs > 0 ? `adelay=delays=${padMs}:all=1,` : ''}apad`
 
   const dir = path.join(getTempDir(), 'previews')
   fs.mkdirSync(dir, { recursive: true })
@@ -93,15 +82,15 @@ export async function renderEncodePreview(req: EncodePreviewRequest): Promise<En
     '-hide_banner', '-loglevel', 'error',
     '-y',
     '-ss', req.startSec.toFixed(3), '-t', dur, '-i', req.videoPath,
-    '-ss', Math.max(0, audioStart).toFixed(3), '-t', dur, '-i', req.audioPath,
-    '-map', '0:v:0', '-map', `1:a:${req.audioStreamIndex}`,
+    // The trailing ? lets a video with no audio through.
+    '-map', '0:v:0', '-map', '0:a:0?',
     ...video.args,
     // HEVC in MP4 needs the hvc1 tag for most players to accept it.
-    ...(video.encoderLabel.startsWith('hevc') ? ['-tag:v', 'hvc1'] : []),
+    ...(isHevcEncoder(video.encoderLabel) && !webm ? ['-tag:v', 'hvc1'] : []),
     // Keep each frame's own timestamp, so a grabbed frame from the clip is
     // the same frame as the original at the same offset.
     '-fps_mode', 'passthrough',
-    '-af', audioFilter,
+    // Audio only so the clip can be listened to; the job itself copies it.
     ...(webm ? ['-c:a', 'libopus'] : ['-c:a', 'aac']), '-b:a', '192k', '-ac', '2',
     '-t', dur,
     ...(webm ? [] : ['-movflags', '+faststart']),
@@ -124,7 +113,7 @@ export async function renderEncodePreview(req: EncodePreviewRequest): Promise<En
     durationSec: req.durationSec,
   })
   const clip = fs.readFileSync(clipPath)
-  return { clip, bytes: clip.length, elapsedMs, encoderLabel: video.encoderLabel }
+  return { clip, bytes: clip.length, elapsedMs, encoderLabel: video.encoderLabel, notes: video.notes }
 }
 
 // One full-resolution PNG frame `atSec` into the last rendered clip, and the

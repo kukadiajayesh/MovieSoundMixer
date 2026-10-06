@@ -139,7 +139,7 @@ export type JobStatus = 'pending' | 'processing' | 'success' | 'failed' | 'cance
 
 export interface DBJob {
   id: string
-  type: 'extract' | 'merge'
+  type: 'extract' | 'merge' | 'reencode'
   inputPath: string
   outputPath: string
   args: string[]
